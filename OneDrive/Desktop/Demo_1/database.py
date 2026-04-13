@@ -50,11 +50,10 @@ def init_db():
 
         CREATE TABLE IF NOT EXISTS alerts (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id   INTEGER NOT NULL,
+            student_id   INTEGER,
             student_name TEXT    NOT NULL,
             alert_type   TEXT    NOT NULL,
-            timestamp    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (student_id) REFERENCES students(id)
+            timestamp    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE TABLE IF NOT EXISTS attention_log (
@@ -66,7 +65,32 @@ def init_db():
         );
     """)
     conn.commit()
+    _migrate_alerts(conn)
     _seed_demo_data(conn)
+
+
+def _migrate_alerts(conn: sqlite3.Connection):
+    """Make alerts.student_id nullable if the old NOT NULL schema exists."""
+    info = conn.execute("PRAGMA table_info(alerts)").fetchall()
+    for col in info:
+        if col[1] == "student_id" and col[3] == 1:  # notnull flag = 1
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS alerts_v2 (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    student_id   INTEGER,
+                    student_name TEXT    NOT NULL,
+                    alert_type   TEXT    NOT NULL,
+                    timestamp    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                INSERT OR IGNORE INTO alerts_v2
+                    SELECT id, student_id, student_name, alert_type, timestamp
+                    FROM alerts;
+                DROP TABLE alerts;
+                ALTER TABLE alerts_v2 RENAME TO alerts;
+            """)
+            conn.commit()
+            print("[EduGuard] Migrated alerts table: student_id is now nullable")
+            break
 
 
 def _seed_demo_data(conn: sqlite3.Connection):
@@ -143,7 +167,7 @@ def save_student(name: str, class_name: str, role: str, embedding) -> int:
     return cur.lastrowid
 
 
-def find_matching_student(embedding, threshold: float = 0.72):
+def find_matching_student(embedding, threshold: float = 0.65):
     """Cosine-similarity lookup against enrolled face embeddings."""
     import numpy as np
     conn = get_db()
@@ -218,6 +242,16 @@ def save_alert(student_id: int, student_name: str, alert_type: str):
     conn.execute(
         "INSERT INTO alerts (student_id, student_name, alert_type) VALUES (?, ?, ?)",
         (student_id, student_name, alert_type),
+    )
+    conn.commit()
+
+
+def save_unknown_alert(alert_type: str = "unknown_person"):
+    """Save an alert for an unrecognised face (no student_id)."""
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO alerts (student_id, student_name, alert_type) VALUES (NULL, ?, ?)",
+        ("Unknown", alert_type),
     )
     conn.commit()
 

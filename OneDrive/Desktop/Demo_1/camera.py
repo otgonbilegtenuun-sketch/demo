@@ -25,7 +25,8 @@ _RunningMode        = mp.tasks.vision.RunningMode
 _MpImage            = mp.Image
 _ImageFormat        = mp.ImageFormat
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "face_landmarker.task")
+MODEL_PATH      = os.path.join(os.path.dirname(__file__), "face_landmarker.task")
+FACE_NAME_TTL   = 6.0   # seconds a recognised name stays visible after last match
 
 
 def _make_landmarker(num_faces: int = 8) -> _FaceLandmarker:
@@ -111,7 +112,9 @@ class CameraProcessor:
         self._frame:  Optional[np.ndarray] = None
 
         self._exam_mode  = False
-        self._last_name: Optional[str] = None
+
+        # Per-face name cache: face_idx → {"name": str|None, "ts": float}
+        self._face_name_map: dict = {}
 
         # Consecutive down-gaze counter for phone-use detection
         self._down_streak = 0
@@ -121,10 +124,12 @@ class CameraProcessor:
         self._face_info: list = []
 
         # Callbacks set by app.py
-        # on_recognition(embedding, attentive, sideways) → called every 2 s
-        self.on_recognition:  Optional[Callable] = None
+        # on_recognition(face_idx, embedding, attentive, sideways) → bool (True = matched)
+        self.on_recognition:   Optional[Callable] = None
         # on_phone_suspect(student_name) → called when down-gaze threshold hit
-        self.on_phone_suspect: Optional[Callable] = None
+        self.on_phone_suspect:  Optional[Callable] = None
+        # on_unknown_face(face_idx) → called in exam mode when face not recognised
+        self.on_unknown_face:   Optional[Callable] = None
 
     # ── Properties ───────────────────────────────────────────────────────────
 
@@ -140,16 +145,38 @@ class CameraProcessor:
     def exam_mode(self, value: bool):
         self._exam_mode = value
         if not value:
-            self._down_streak = 0  # reset on exam mode off
+            self._down_streak = 0
+            with self._lock:
+                self._face_name_map.clear()
 
     @property
     def recognized_faces(self) -> list:
         with self._lock:
             return list(self._face_info)
 
-    def set_last_name(self, name: Optional[str]):
+    def set_face_name(self, face_idx: int, name: Optional[str]):
+        """Record the recognised name for a specific face slot."""
         with self._lock:
-            self._last_name = name
+            self._face_name_map[face_idx] = {"name": name, "ts": time.time()}
+
+    def _get_face_name(self, face_idx: int) -> str:
+        """Return the sticky name for a face slot, or 'Unknown' if expired."""
+        with self._lock:
+            entry = self._face_name_map.get(face_idx)
+        if entry and (time.time() - entry["ts"]) < FACE_NAME_TTL:
+            return entry["name"] or "Unknown"
+        return "Unknown"
+
+    def _prune_face_names(self, num_faces: int):
+        """Drop stale entries for face slots that are no longer visible."""
+        now = time.time()
+        with self._lock:
+            stale = [
+                k for k, v in self._face_name_map.items()
+                if k >= num_faces and (now - v["ts"]) > FACE_NAME_TTL
+            ]
+            for k in stale:
+                del self._face_name_map[k]
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -206,10 +233,15 @@ class CameraProcessor:
 
     def _handle_recognition(self, faces: list, now: float):
         """Run recognition callbacks and phone-down-gaze logic."""
-        for f in faces:
-            # Standard recognition callback (attendance, gaze alerts)
+        for idx, f in enumerate(faces):
+            # Recognition callback — returns True if a known student matched
+            matched = False
             if self.on_recognition:
-                self.on_recognition(f["embedding"], f["attentive"], f["sideways"])
+                matched = bool(self.on_recognition(idx, f["embedding"], f["attentive"], f["sideways"]))
+
+            # Exam mode: alert on unknown face
+            if self._exam_mode and not matched and self.on_unknown_face:
+                self.on_unknown_face(idx)
 
             # Phone detection: track consecutive down-gaze frames
             if self._exam_mode and f.get("looking_down"):
@@ -217,8 +249,7 @@ class CameraProcessor:
                 if (self._down_streak >= 2
                         and self.on_phone_suspect
                         and (now - self._last_phone_alert) > 8.0):
-                    with self._lock:
-                        name = self._last_name or "Unknown"
+                    name = self._get_face_name(idx)
                     self.on_phone_suspect(name)
                     self._last_phone_alert = now
                     self._down_streak      = 0
@@ -232,7 +263,7 @@ class CameraProcessor:
         result = landmarker.detect(mp_img)
 
         faces = []
-        for face_lms in (result.face_landmarks or []):
+        for face_idx, face_lms in enumerate(result.face_landmarks or []):
             lms          = face_lms
             attentive    = _is_attentive(lms)
             sideways     = _is_looking_sideways(lms)
@@ -246,8 +277,14 @@ class CameraProcessor:
             x2 = min(w, int(max(xs)) + 10)
             y2 = min(h, int(max(ys)) + 10)
 
+            name = self._get_face_name(face_idx)
+            is_unknown = (name == "Unknown")
+
             # Box colour based on current state
-            if self._exam_mode and looking_down:
+            if self._exam_mode and is_unknown:
+                color  = (128, 0, 200)   # purple = unknown/intruder
+                status = "ZORCHIGCH"
+            elif self._exam_mode and looking_down:
                 color  = (0, 140, 255)   # orange = down/phone
                 status = "Down gaze"
             elif self._exam_mode and sideways:
@@ -261,16 +298,13 @@ class CameraProcessor:
                 status = "Distracted"
 
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-
-            with self._lock:
-                name = self._last_name or "Unknown"
-
             cv2.putText(frame, name,   (x1, y1 - 24),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
             cv2.putText(frame, status, (x1, y1 - 7),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.42, color, 1)
 
             faces.append({
+                "face_idx":     face_idx,
                 "embedding":    embedding,
                 "attentive":    attentive,
                 "sideways":     sideways,
@@ -278,6 +312,8 @@ class CameraProcessor:
                 "name":         name,
                 "bbox":         (x1, y1, x2, y2),
             })
+
+        self._prune_face_names(len(faces))
 
         # HUD overlays
         if self._exam_mode:

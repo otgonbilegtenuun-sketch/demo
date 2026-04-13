@@ -284,6 +284,7 @@ tbody tr:hover td { background: #EEF0FF; }
 }
 .notif-item.suspicious { border-color:var(--danger); }
 .notif-item.phone      { border-color:var(--warning); }
+.notif-item.unknown    { border-color:#7C3AED; }
 .notif-icon-wrap {
   width:34px; height:34px;
   border-radius:8px;
@@ -292,6 +293,7 @@ tbody tr:hover td { background: #EEF0FF; }
 }
 .notif-icon-wrap.red    { background:#FEE2E2; color:var(--danger); }
 .notif-icon-wrap.orange { background:#FEF3C7; color:var(--warning); }
+.notif-icon-wrap.purple { background:#EDE9FE; color:#7C3AED; }
 .notif-body { flex:1; min-width:0; }
 .notif-body strong { display:block; font-weight:700; color:var(--text); }
 .notif-body span   { color:var(--muted); font-size:.78rem; }
@@ -558,6 +560,12 @@ kbd { background:var(--surface2); border:1px solid var(--border); padding:2px 6p
   </symbol>
   <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
+  </symbol>
+  <symbol id="i-person-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+    <circle cx="9" cy="7" r="4"/>
+    <line x1="17" y1="8" x2="23" y2="14"/>
+    <line x1="23" y1="8" x2="17" y2="14"/>
   </symbol>
 </svg>
 
@@ -1200,7 +1208,7 @@ const I18N = {
     class_breakdown:'Ангийн дэлгэрэнгүй', alert_summary:'Мэдэгдлийн тойм',
     badge_present:'Ирсэн', badge_absent:'Ирээгүй',
     alert_suspicious:'Сэжигтэй хөдөлгөөн', alert_phone:'Утас хэрэглэсэн',
-    alert_down:'Доош харж байна',
+    alert_down:'Доош харж байна', alert_unknown:'Зорчигч илрүүлэгдсэн',
     status_att:'Анхааралтай', status_dist:'Анхаарал сарнисан', status_susp:'Сэжигтэй',
     status_down:'Доош харж байна',
     enroll_ok:'бүртгэгдлээ! зураг боловсруулагдлаа.',
@@ -1283,7 +1291,7 @@ const I18N = {
     class_breakdown:'Class Breakdown', alert_summary:'Alert Summary',
     badge_present:'Present', badge_absent:'Absent',
     alert_suspicious:'Suspicious movement', alert_phone:'Phone detected',
-    alert_down:'Looking down',
+    alert_down:'Looking down', alert_unknown:'Unknown person detected',
     status_att:'Attentive', status_dist:'Distracted', status_susp:'Suspicious',
     status_down:'Looking down',
     enroll_ok:'enrolled successfully! photos processed.',
@@ -1336,7 +1344,11 @@ function setLang(lang) {
 }
 
 function alertLabel(type) {
-  const m = { suspicious_glance: t('alert_suspicious'), phone_detected: t('alert_phone') };
+  const m = {
+    suspicious_glance: t('alert_suspicious'),
+    phone_detected:    t('alert_phone'),
+    unknown_person:    t('alert_unknown'),
+  };
   return m[type] || type;
 }
 
@@ -1428,18 +1440,23 @@ async function requestNotifPerm() {
 }
 
 function pushNotif(alert) {
-  const isPhone = alert.alert_type === 'phone_detected';
-  const label   = alertLabel(alert.alert_type);
-  const time    = fmtTime(alert.timestamp);
-  const msg     = `${alert.student_name} — ${label}`;
+  const isPhone   = alert.alert_type === 'phone_detected';
+  const isUnknown = alert.alert_type === 'unknown_person';
+  const label     = alertLabel(alert.alert_type);
+  const ts        = fmtTime(alert.timestamp);
+  const msg       = `${alert.student_name} — ${label}`;
 
   if (Notification.permission === 'granted') {
-    new Notification('EduGuard AI', { body: `${msg} @ ${time}` });
+    new Notification('EduGuard AI ⚠️', { body: `${msg} @ ${ts}` });
   }
 
-  const cls  = isPhone ? 'phone' : 'suspicious';
-  const icol = isPhone ? 'orange' : 'red';
-  const iid  = isPhone ? 'i-phone' : 'i-alert';
+  if (isUnknown) {
+    toast(`⚠️ ${t('alert_unknown')}!`, 'error');
+  }
+
+  const cls  = isPhone ? 'phone' : isUnknown ? 'unknown' : 'suspicious';
+  const icol = isPhone ? 'orange' : isUnknown ? 'purple' : 'red';
+  const iid  = isPhone ? 'i-phone' : isUnknown ? 'i-person-off' : 'i-alert';
 
   const html = `
     <div class="notif-item ${cls}">
@@ -1448,7 +1465,7 @@ function pushNotif(alert) {
         <strong>${alert.student_name}</strong>
         <span>${label}</span>
       </div>
-      <span class="notif-time">${time}</span>
+      <span class="notif-time">${ts}</span>
     </div>`;
 
   ['teacherNotifLog','monAlertLog','adminNotifLog'].forEach(id => {
@@ -1471,10 +1488,12 @@ function loadExistingAlerts(logs) {
   if (!alerts.length) return;
   S.lastAlertId = Math.max(...alerts.map(a=>a.id));
   const html = alerts.slice(0,20).map(a => {
-    const isPhone = a.alert_type==='phone_detected';
-    const icol = isPhone?'orange':'red';
-    const iid  = isPhone?'i-phone':'i-alert';
-    return `<div class="notif-item ${isPhone?'phone':'suspicious'}">
+    const isPhone   = a.alert_type==='phone_detected';
+    const isUnknown = a.alert_type==='unknown_person';
+    const icol = isPhone?'orange':isUnknown?'purple':'red';
+    const iid  = isPhone?'i-phone':isUnknown?'i-person-off':'i-alert';
+    const cls  = isPhone?'phone':isUnknown?'unknown':'suspicious';
+    return `<div class="notif-item ${cls}">
       <div class="notif-icon-wrap ${icol}"><svg class="icon-sm"><use href="#${iid}"/></svg></div>
       <div class="notif-body"><strong>${a.student_name}</strong><span>${alertLabel(a.alert_type)}</span></div>
       <span class="notif-time">${fmtTime(a.timestamp)}</span>

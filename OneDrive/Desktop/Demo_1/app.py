@@ -6,6 +6,7 @@ API routes are prefixed with /api/.
 """
 
 import os
+import time
 from typing import List, Optional
 
 import numpy as np
@@ -31,17 +32,34 @@ def serve_html():
 
 # ── Recognition callback (camera thread, every 2 s) ──────────────────────────
 
-def _on_face_recognized(embedding: np.ndarray, attentive: bool, sideways: bool):
+_last_unknown_alert: float = 0.0
+_UNKNOWN_COOLDOWN    = 10.0   # minimum seconds between unknown-face alerts
+
+
+def _on_face_recognized(face_idx: int, embedding: np.ndarray, attentive: bool, sideways: bool) -> bool:
+    """Called for every detected face every 2 s. Returns True if a known student matched."""
     student, sim = db.find_matching_student(embedding)
     if student:
-        camera.set_last_name(student["name"])
+        camera.set_face_name(face_idx, student["name"])
         db.update_attendance(student["id"], attentive)
         db.log_attention(student["id"], student["name"], attentive)
         if camera.exam_mode and sideways:
             db.save_alert(student["id"], student["name"], "suspicious_glance")
             print(f"[ALERT] {student['name']} suspicious glance (sim={sim:.3f})")
-    else:
-        camera.set_last_name(None)
+        return True
+    # Don't wipe the sticky name — let FACE_NAME_TTL expire it naturally
+    return False
+
+
+def _on_unknown_face(face_idx: int):
+    """Called in exam mode when a face cannot be matched to any enrolled student."""
+    global _last_unknown_alert
+    now = time.time()
+    if now - _last_unknown_alert < _UNKNOWN_COOLDOWN:
+        return
+    _last_unknown_alert = now
+    db.save_unknown_alert("unknown_person")
+    print(f"[ALERT] Unknown person detected in exam mode (face slot #{face_idx})")
 
 
 def _on_phone_suspect(name: str):
@@ -51,7 +69,6 @@ def _on_phone_suspect(name: str):
     if row:
         db.save_alert(row["id"], name, "phone_detected")
     else:
-        # Fallback to first enrolled student if name not matched yet
         first = db.get_first_student()
         if first:
             db.save_alert(first["id"], name, "phone_detected")
@@ -59,6 +76,7 @@ def _on_phone_suspect(name: str):
 
 
 camera.on_recognition   = _on_face_recognized
+camera.on_unknown_face  = _on_unknown_face
 camera.on_phone_suspect = _on_phone_suspect
 
 
