@@ -216,7 +216,12 @@ class CameraProcessor:
                     time.sleep(0.05)
                     continue
 
-                annotated, faces = self._process_frame(frame.copy(), landmarker)
+                try:
+                    annotated, faces = self._process_frame(frame.copy(), landmarker)
+                except Exception as e:
+                    print(f"[camera] _process_frame error: {e}")
+                    time.sleep(0.05)
+                    continue
 
                 with self._lock:
                     self._frame     = annotated
@@ -224,10 +229,15 @@ class CameraProcessor:
 
                 now = time.time()
                 if (now - last_recog) >= recog_interval and faces:
-                    self._handle_recognition(faces, now)
+                    try:
+                        self._handle_recognition(faces, now)
+                    except Exception as e:
+                        print(f"[camera] _handle_recognition error: {e}")
                     last_recog = now
 
                 time.sleep(0.033)
+        except Exception as e:
+            print(f"[camera] loop fatal error: {e}")
         finally:
             landmarker.close()
 
@@ -237,11 +247,17 @@ class CameraProcessor:
             # Recognition callback — returns True if a known student matched
             matched = False
             if self.on_recognition:
-                matched = bool(self.on_recognition(idx, f["embedding"], f["attentive"], f["sideways"]))
+                try:
+                    matched = bool(self.on_recognition(idx, f["embedding"], f["attentive"], f["sideways"]))
+                except Exception as e:
+                    print(f"[camera] on_recognition error: {e}")
 
             # Exam mode: alert on unknown face
             if self._exam_mode and not matched and self.on_unknown_face:
-                self.on_unknown_face(idx)
+                try:
+                    self.on_unknown_face(idx)
+                except Exception as e:
+                    print(f"[camera] on_unknown_face error: {e}")
 
             # Phone detection: track consecutive down-gaze frames
             if self._exam_mode and f.get("looking_down"):
