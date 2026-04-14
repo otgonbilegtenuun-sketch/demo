@@ -116,6 +116,8 @@ class CameraProcessor:
         # Per-face name cache: face_idx → {"name": str|None, "ts": float}
         self._face_name_map: dict = {}
 
+        self._frame_count = 0   # used for pulse animation
+
         # Consecutive down-gaze counter for phone-use detection
         self._down_streak = 0
         # Cooldown: don't re-alert within 8 seconds
@@ -273,10 +275,14 @@ class CameraProcessor:
                 self._down_streak = max(0, self._down_streak - 1)
 
     def _process_frame(self, frame: np.ndarray, landmarker) -> tuple:
+        self._frame_count += 1
         h, w   = frame.shape[:2]
         rgb    = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_img = _MpImage(image_format=_ImageFormat.SRGB, data=rgb)
         result = landmarker.detect(mp_img)
+
+        # Pulse: alternates every 15 frames (~0.5 s at 30 fps)
+        pulse_on = (self._frame_count % 30) < 15
 
         faces = []
         for face_idx, face_lms in enumerate(result.face_landmarks or []):
@@ -293,18 +299,20 @@ class CameraProcessor:
             x2 = min(w, int(max(xs)) + 10)
             y2 = min(h, int(max(ys)) + 10)
 
-            name = self._get_face_name(face_idx)
+            name       = self._get_face_name(face_idx)
             is_unknown = (name == "Unknown")
 
-            # Box colour based on current state
+            phone_detected = self._exam_mode and looking_down
+
+            # ── Box colour & status ─────────────────────────────────────────
             if self._exam_mode and is_unknown:
                 color  = (128, 0, 200)   # purple = unknown/intruder
                 status = "ZORCHIGCH"
-            elif self._exam_mode and looking_down:
-                color  = (0, 140, 255)   # orange = down/phone
-                status = "Down gaze"
+            elif phone_detected:
+                color  = (0, 185, 80)    # GREEN face box when phone detected
+                status = "UTAAS"
             elif self._exam_mode and sideways:
-                color  = (0, 0, 220)     # red = suspicious
+                color  = (0, 0, 220)     # red = suspicious glance
                 status = "SUSPICIOUS"
             elif attentive:
                 color  = (0, 185, 80)    # green = attentive
@@ -313,11 +321,63 @@ class CameraProcessor:
                 color  = (60, 60, 200)   # blue = distracted
                 status = "Distracted"
 
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            # ── Draw face bounding box ──────────────────────────────────────
+            thickness = 3 if phone_detected else 2
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
             cv2.putText(frame, name,   (x1, y1 - 24),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
             cv2.putText(frame, status, (x1, y1 - 7),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.42, color, 1)
+
+            # ── Phone indicator (red pulsing) ───────────────────────────────
+            if phone_detected:
+                RED = (0, 0, 220)
+
+                # Phone zone: below the face, centred on face width
+                face_cx = (x1 + x2) // 2
+                face_w  = x2 - x1
+                ph_w    = max(40, face_w // 3)      # phone body width
+                ph_h    = int(ph_w * 1.9)           # phone body height
+                ph_x1   = face_cx - ph_w // 2
+                ph_y1   = min(h - ph_h - 10, y2 + 18)
+                ph_x2   = ph_x1 + ph_w
+                ph_y2   = ph_y1 + ph_h
+
+                # Semi-transparent red fill (pulsing opacity)
+                alpha = 0.40 if pulse_on else 0.15
+                ov = frame.copy()
+                cv2.rectangle(ov, (ph_x1, ph_y1), (ph_x2, ph_y2), RED, -1)
+                cv2.addWeighted(ov, alpha, frame, 1 - alpha, 0, frame)
+
+                # Phone outline (solid, pulsing thickness)
+                border = 3 if pulse_on else 1
+                cv2.rectangle(frame, (ph_x1, ph_y1), (ph_x2, ph_y2), RED, border)
+
+                # Phone details: top speaker bar + home button circle
+                sp_y = ph_y1 + 6
+                cv2.rectangle(frame,
+                              (ph_x1 + 6, sp_y),
+                              (ph_x2 - 6, sp_y + 4),
+                              RED, -1)
+                btn_cx = (ph_x1 + ph_x2) // 2
+                btn_cy = ph_y2 - 10
+                cv2.circle(frame, (btn_cx, btn_cy), 5, RED, 2)
+
+                # "УТАС" warning text above phone icon
+                txt_x = max(0, ph_x1 - 4)
+                txt_y = ph_y1 - 6
+                cv2.putText(frame, "! UTAAS", (txt_x, txt_y),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, RED, 2)
+
+                # Pulsing red corner brackets on face box
+                blen = 18
+                bthk = 3 if pulse_on else 1
+                for (cx, cy, dx, dy) in [
+                    (x1, y1,  1,  1), (x2, y1, -1,  1),
+                    (x1, y2,  1, -1), (x2, y2, -1, -1),
+                ]:
+                    cv2.line(frame, (cx, cy), (cx + dx * blen, cy), RED, bthk)
+                    cv2.line(frame, (cx, cy), (cx, cy + dy * blen), RED, bthk)
 
             faces.append({
                 "face_idx":     face_idx,
@@ -331,7 +391,7 @@ class CameraProcessor:
 
         self._prune_face_names(len(faces))
 
-        # HUD overlays
+        # ── HUD overlays ────────────────────────────────────────────────────
         if self._exam_mode:
             ov = frame.copy()
             cv2.rectangle(ov, (0, 0), (215, 44), (0, 0, 170), -1)
