@@ -83,6 +83,28 @@ def _is_attentive(landmarks) -> bool:
     return abs(nose.x - eye_mid) / face_w < 0.18
 
 
+def _detect_uniform(frame: np.ndarray, x1: int, x2: int, y2: int, h: int, w: int) -> Optional[bool]:
+    """
+    Detect if student is wearing white uniform by analysing the clothing
+    region below the face bounding box.
+    Returns True (wearing), False (not wearing), None (undetermined).
+    """
+    cloth_y1 = y2 + 5
+    cloth_y2 = min(h, y2 + 130)
+    cloth_x1 = max(0, x1 - 10)
+    cloth_x2 = min(w, x2 + 10)
+    if (cloth_y2 - cloth_y1) < 20 or (cloth_x2 - cloth_x1) < 20:
+        return None
+    region = frame[cloth_y1:cloth_y2, cloth_x1:cloth_x2]
+    if region.size == 0:
+        return None
+    hsv = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)
+    # White: low saturation + high brightness
+    white_mask = cv2.inRange(hsv, np.array([0, 0, 160]), np.array([180, 50, 255]))
+    white_pct = np.count_nonzero(white_mask) / white_mask.size
+    return white_pct >= 0.30
+
+
 def _is_looking_down(landmarks) -> bool:
     """
     True when head is tilted notably downward.
@@ -132,6 +154,8 @@ class CameraProcessor:
         self.on_phone_suspect:  Optional[Callable] = None
         # on_unknown_face(face_idx) → called in exam mode when face not recognised
         self.on_unknown_face:   Optional[Callable] = None
+        # on_uniform(face_idx, student_name, is_wearing) — called when uniform status determined
+        self.on_uniform: Optional[Callable] = None
 
     # ── Properties ───────────────────────────────────────────────────────────
 
@@ -254,6 +278,15 @@ class CameraProcessor:
                 except Exception as e:
                     print(f"[camera] on_recognition error: {e}")
 
+            # Uniform callback — only fire for recognised students
+            if matched and self.on_uniform and f.get("uniform_on") is not None:
+                try:
+                    name = self._get_face_name(idx)
+                    if name != "Unknown":
+                        self.on_uniform(idx, name, f["uniform_on"])
+                except Exception as e:
+                    print(f"[camera] on_uniform error: {e}")
+
             # Exam mode: alert on unknown face
             if self._exam_mode and not matched and self.on_unknown_face:
                 try:
@@ -298,6 +331,8 @@ class CameraProcessor:
             y1 = max(0, int(min(ys)) - 10)
             x2 = min(w, int(max(xs)) + 10)
             y2 = min(h, int(max(ys)) + 10)
+
+            uniform_on = _detect_uniform(frame, x1, x2, y2, h, w)
 
             name       = self._get_face_name(face_idx)
             is_unknown = (name == "Unknown")
@@ -379,12 +414,23 @@ class CameraProcessor:
                     cv2.line(frame, (cx, cy), (cx + dx * blen, cy), RED, bthk)
                     cv2.line(frame, (cx, cy), (cx, cy + dy * blen), RED, bthk)
 
+            # Uniform indicator pill below face box (skip if phone detected)
+            if uniform_on is not None and not phone_detected:
+                u_color = (0, 185, 80) if uniform_on else (0, 0, 220)
+                u_text  = "UNIFORM" if uniform_on else "NO UNIFORM"
+                (tw, _), _ = cv2.getTextSize(u_text, cv2.FONT_HERSHEY_SIMPLEX, 0.38, 1)
+                u_y = y2 + 18
+                cv2.rectangle(frame, (x1, u_y - 13), (x1 + tw + 8, u_y + 3), u_color, -1)
+                cv2.putText(frame, u_text, (x1 + 4, u_y),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.38, (255, 255, 255), 1)
+
             faces.append({
                 "face_idx":     face_idx,
                 "embedding":    embedding,
                 "attentive":    attentive,
                 "sideways":     sideways,
                 "looking_down": looking_down,
+                "uniform_on":   uniform_on,
                 "name":         name,
                 "bbox":         (x1, y1, x2, y2),
             })

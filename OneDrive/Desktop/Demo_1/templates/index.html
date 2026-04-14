@@ -225,6 +225,7 @@ button:disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
 .g3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 18px; }
 .g4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 18px; }
 .g5 { display: grid; grid-template-columns: repeat(5,1fr); gap: 18px; }
+.g6 { display: grid; grid-template-columns: repeat(6,1fr); gap: 18px; }
 .mb16 { margin-bottom: 16px; }
 .mb20 { margin-bottom: 20px; }
 .mb24 { margin-bottom: 24px; }
@@ -294,6 +295,16 @@ tbody tr:hover td { background: #EEF0FF; }
 .notif-icon-wrap.red    { background:#FEE2E2; color:var(--danger); }
 .notif-icon-wrap.orange { background:#FEF3C7; color:var(--warning); }
 .notif-icon-wrap.purple { background:#EDE9FE; color:#7C3AED; }
+
+/* ── Uniform badge ─────────────────────────────────────────────────────── */
+.uniform-badge {
+  display:inline-flex; align-items:center; gap:4px;
+  padding:3px 9px; border-radius:999px;
+  font-size:.72rem; font-weight:700; white-space:nowrap;
+}
+.uniform-yes { background:#D1FAE5; color:var(--success); }
+.uniform-no  { background:#FEE2E2; color:var(--danger); }
+.uniform-unk { background:var(--surface2); color:var(--muted); }
 .notif-body { flex:1; min-width:0; }
 .notif-body strong { display:block; font-weight:700; color:var(--text); }
 .notif-body span   { color:var(--muted); font-size:.78rem; }
@@ -891,7 +902,7 @@ function ico(id,cls='icon'){return `<svg class="${cls}"><use href="#${id}"/></sv
     </div>
   </div>
 
-  <div class="g4 mb20">
+  <div class="g5 mb20">
     <div class="card stat-card">
       <div class="stat-val" id="tPresent" style="color:var(--success)">—</div>
       <div class="stat-label" data-i18n="stat_present">Ирсэн</div>
@@ -908,6 +919,10 @@ function ico(id,cls='icon'){return `<svg class="${cls}"><use href="#${id}"/></sv
       <div class="stat-val" id="tAlerts" style="color:var(--danger)">—</div>
       <div class="stat-label" data-i18n="stat_alerts">Мэдэгдэл</div>
     </div>
+    <div class="card stat-card">
+      <div class="stat-val" id="tUniform" style="color:var(--success)">—</div>
+      <div class="stat-label" data-i18n="uniform_rate">Дүрэмт хувцасны хувь</div>
+    </div>
   </div>
 
   <div class="g2 mb20">
@@ -922,6 +937,7 @@ function ico(id,cls='icon'){return `<svg class="${cls}"><use href="#${id}"/></sv
               <th data-i18n="col_att">Анхаарал</th>
               <th data-i18n="col_alerts">Мэдэгдэл</th>
               <th data-i18n="col_status">Төлөв</th>
+              <th data-i18n="col_uniform">Дүрэмт хувцас</th>
             </tr>
           </thead>
           <tbody id="attTable"></tbody>
@@ -932,6 +948,11 @@ function ico(id,cls='icon'){return `<svg class="${cls}"><use href="#${id}"/></sv
       <div class="card-title" data-i18n="chart_title">Ангийн анхаарал цагаар</div>
       <canvas id="attChart" height="190"></canvas>
     </div>
+  </div>
+
+  <div class="card mb20">
+    <div class="card-title" data-i18n="uniform_h">Дүрэмт хувцас</div>
+    <div id="uniformTable"></div>
   </div>
 
   <div class="card">
@@ -983,6 +1004,10 @@ function ico(id,cls='icon'){return `<svg class="${cls}"><use href="#${id}"/></sv
     <div class="card-title" data-i18n="today_summary">Өнөөдрийн тойм</div>
     <div id="pSummary" class="text-muted text-sm" data-i18n="loading">Уншиж байна…</div>
   </div>
+  <div class="card" style="max-width:720px;margin-top:16px">
+    <div class="card-title" data-i18n="uniform_h">Дүрэмт хувцас</div>
+    <div id="pUniform" class="text-muted text-sm" data-i18n="loading">Уншиж байна…</div>
+  </div>
 </div>
 
 <!-- ═══════════════════ ADMIN DASHBOARD ════════════════════════════════ -->
@@ -992,7 +1017,7 @@ function ico(id,cls='icon'){return `<svg class="${cls}"><use href="#${id}"/></sv
     <p data-i18n="admin_sub">Сургуулийн нийт шинжилгээ ба гүйцэтгэлийн тойм</p>
   </div>
 
-  <div class="g5 mb24">
+  <div class="g6 mb24">
     <div class="card stat-card">
       <div class="stat-val" id="aTotal">—</div>
       <div class="stat-label" data-i18n="stat_enrolled">Бүртгэлтэй</div>
@@ -1012,6 +1037,10 @@ function ico(id,cls='icon'){return `<svg class="${cls}"><use href="#${id}"/></sv
     <div class="card stat-card">
       <div class="stat-val" id="aAlerts" style="color:var(--danger)">—</div>
       <div class="stat-label" data-i18n="stat_alerts">Мэдэгдэл</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-val" id="aUniform" style="color:var(--success)">—</div>
+      <div class="stat-label" data-i18n="uniform_rate">Дүрэмт хувцасны хувь</div>
     </div>
   </div>
 
@@ -1209,6 +1238,10 @@ const I18N = {
     badge_present:'Ирсэн', badge_absent:'Ирээгүй',
     alert_suspicious:'Сэжигтэй хөдөлгөөн', alert_phone:'Утас хэрэглэсэн',
     alert_down:'Доош харж байна', alert_unknown:'Зорчигч илрүүлэгдсэн',
+    uniform_h:'Дүрэмт хувцас', uniform_rate:'Дүрэмт хувцасны хувь',
+    uniform_wearing:'Хувцастай', uniform_not:'Хувцасгүй', uniform_weekly:'7 хоногийн дундаж',
+    uniform_checked:'Шалгагдсан', col_uniform:'Дүрэмт хувцас', uniform_yes:'✓ Хувцастай',
+    uniform_no:'✗ Хувцасгүй', uniform_unk:'Шалгаагүй',
     status_att:'Анхааралтай', status_dist:'Анхаарал сарнисан', status_susp:'Сэжигтэй',
     status_down:'Доош харж байна',
     enroll_ok:'бүртгэгдлээ! зураг боловсруулагдлаа.',
@@ -1292,6 +1325,10 @@ const I18N = {
     badge_present:'Present', badge_absent:'Absent',
     alert_suspicious:'Suspicious movement', alert_phone:'Phone detected',
     alert_down:'Looking down', alert_unknown:'Unknown person detected',
+    uniform_h:'Uniform', uniform_rate:'Uniform Rate',
+    uniform_wearing:'Wearing', uniform_not:'Not Wearing', uniform_weekly:'7-day Avg',
+    uniform_checked:'Checked', col_uniform:'Uniform', uniform_yes:'✓ Wearing',
+    uniform_no:'✗ Not Wearing', uniform_unk:'Not Checked',
     status_att:'Attentive', status_dist:'Distracted', status_susp:'Suspicious',
     status_down:'Looking down',
     enroll_ok:'enrolled successfully! photos processed.',
@@ -1310,6 +1347,7 @@ const S = {
   pollTimer:     null,
   monTimer:      null,
   cachedAtt:     null,  // cached attendance data for re-render on lang switch
+  cachedUniform: null,  // cached uniform data for re-render on lang switch
 };
 
 // ── Translation helpers ──────────────────────────────────────────────────────
@@ -1340,6 +1378,7 @@ function setLang(lang) {
   applyI18n();
   // Re-render current page content
   if (S.cachedAtt) renderAttTable(S.cachedAtt);
+  if (S.cachedUniform) renderUniformTable(S.cachedUniform);
   showPage(window.location.pathname);
 }
 
@@ -1657,11 +1696,16 @@ function renderFacePanel(faces) {
     const led=isDown?'var(--warning)':f.attentive?'var(--success)':'#6B7280';
     const status=isDown?t('status_down'):f.attentive?t('status_att'):t('status_dist');
     const downTag=isDown?`<span class="down-indicator"><svg class="icon-sm"><use href="#i-down"/></svg>${t('alert_down')}</span>`:'';
-    return `<div class="face-item">
+    const uBadge = f.uniform_on === true
+      ? `<span class="uniform-badge uniform-yes">${t('uniform_yes')}</span>`
+      : f.uniform_on === false
+        ? `<span class="uniform-badge uniform-no">${t('uniform_no')}</span>`
+        : '';
+    return `<div class="face-item" style="flex-wrap:wrap;gap:6px">
       <div class="face-led" style="background:${led}"></div>
-      <div><div class="face-item-name">${f.name||'Unknown'}</div>
+      <div style="flex:1"><div class="face-item-name">${f.name||'Unknown'}</div>
         <div class="face-item-status">${status}</div></div>
-      ${downTag}
+      ${downTag}${uBadge}
     </div>`;
   }).join('');
 }
@@ -1688,12 +1732,34 @@ async function initTeacher() {
 }
 
 async function refreshTeacher() {
-  const [att,hist]=await Promise.all([
+  const [att,hist,uniformToday,uniformStats]=await Promise.all([
     api('GET','/api/attendance/today'),
     api('GET','/api/attention/history'),
-  ]).catch(()=>[null,null]);
+    api('GET','/api/uniform/today'),
+    api('GET','/api/uniform/stats'),
+  ]).catch(()=>[null,null,null,null]);
   if(att){ S.cachedAtt=att; renderAttTable(att); }
   if(hist) updateChart(hist);
+  if(uniformStats) document.getElementById('tUniform').textContent=uniformStats.rate+'%';
+  if(uniformToday){ S.cachedUniform=uniformToday; renderUniformTable(uniformToday); }
+}
+
+function renderUniformTable(rows) {
+  const el = document.getElementById('uniformTable');
+  if (!el) return;
+  if (!rows.length) { el.innerHTML = `<p class="text-muted text-sm">${t('no_student')}</p>`; return; }
+  el.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px">` +
+    rows.map(r => {
+      const badge = r.is_wearing === true
+        ? `<span class="uniform-badge uniform-yes">${t('uniform_yes')}</span>`
+        : r.is_wearing === false
+          ? `<span class="uniform-badge uniform-no">${t('uniform_no')}</span>`
+          : `<span class="uniform-badge uniform-unk">${t('uniform_unk')}</span>`;
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div><strong>${r.name}</strong> <span class="text-muted text-sm">${r.class_name}</span></div>
+        ${badge}
+      </div>`;
+    }).join('') + `</div>`;
 }
 
 function renderAttTable(rows) {
@@ -1709,7 +1775,7 @@ function renderAttTable(rows) {
   document.getElementById('tAlerts').textContent=alerts;
 
   const tbody=document.getElementById('attTable');
-  if(!rows.length){tbody.innerHTML=`<tr><td colspan="5" class="text-muted">${t('no_student')}</td></tr>`;return;}
+  if(!rows.length){tbody.innerHTML=`<tr><td colspan="6" class="text-muted">${t('no_student')}</td></tr>`;return;}
 
   tbody.innerHTML=rows.map(r=>{
     const c=attColor(r.attention_score);
@@ -1719,6 +1785,14 @@ function renderAttTable(rows) {
     const ab=r.alert_count>0
       ?`<span class="badge badge-red"><svg class="icon-sm"><use href="#i-alert"/></svg>${r.alert_count}</span>`
       :`<span style="color:var(--muted)">—</span>`;
+    const uRow = S.cachedUniform ? S.cachedUniform.find(u=>u.id===r.id) : null;
+    const ub = uRow
+      ? (uRow.is_wearing === true
+          ? `<span class="uniform-badge uniform-yes">${t('uniform_yes')}</span>`
+          : uRow.is_wearing === false
+            ? `<span class="uniform-badge uniform-no">${t('uniform_no')}</span>`
+            : `<span class="uniform-badge uniform-unk">${t('uniform_unk')}</span>`)
+      : `<span class="uniform-badge uniform-unk">${t('uniform_unk')}</span>`;
     return `<tr>
       <td><strong>${r.name}</strong><br><span class="text-muted" style="font-size:.75rem">${r.class_name}</span></td>
       <td><span style="font-size:.84rem;display:flex;align-items:center;gap:5px"><svg class="icon-sm" style="color:var(--muted)"><use href="#i-clock"/></svg>${fmtTime(r.arrived_at)}</span></td>
@@ -1728,7 +1802,7 @@ function renderAttTable(rows) {
           <span class="att-pct" style="color:${c}">${r.attention_score}%</span>
         </div>
       </td>
-      <td>${ab}</td><td>${sb}</td>
+      <td>${ab}</td><td>${sb}</td><td>${ub}</td>
     </tr>`;
   }).join('');
 }
@@ -1787,13 +1861,30 @@ function updateChart(hist) {
 // ═════════════════════ PARENT DASHBOARD ══════════════════════════════════════
 
 async function initParent() {
-  const res=await api('GET','/api/parent/student').catch(()=>null);
+  const [res, uniformRows]=await Promise.all([
+    api('GET','/api/parent/student').catch(()=>null),
+    api('GET','/api/uniform/today').catch(()=>[]),
+  ]);
   if(!res){
     document.getElementById('pName').textContent=t('no_student');
     document.getElementById('pSummary').textContent='—';
+    document.getElementById('pUniform').textContent='—';
     return;
   }
   const s=res.student, d=res.today;
+
+  // Uniform status for this child
+  const uRow = Array.isArray(uniformRows) ? uniformRows.find(u=>u.id===s.id) : null;
+  const pUniformEl = document.getElementById('pUniform');
+  if (pUniformEl) {
+    if (uRow && uRow.is_wearing === true) {
+      pUniformEl.innerHTML = `<span class="uniform-badge uniform-yes">${t('uniform_yes')}</span>`;
+    } else if (uRow && uRow.is_wearing === false) {
+      pUniformEl.innerHTML = `<span class="uniform-badge uniform-no">${t('uniform_no')}</span>`;
+    } else {
+      pUniformEl.innerHTML = `<span class="uniform-badge uniform-unk">${t('uniform_unk')}</span>`;
+    }
+  }
   document.getElementById('pName').textContent=s.name;
   document.getElementById('pClass').textContent=s.class_name;
 
@@ -1820,17 +1911,19 @@ async function initParent() {
 // ═════════════════════ ADMIN DASHBOARD ═══════════════════════════════════════
 
 async function initAdmin() {
-  const [st,att,alerts]=await Promise.all([
+  const [st,att,alerts,uniformStats]=await Promise.all([
     api('GET','/api/attendance/stats'),
     api('GET','/api/attendance/today'),
     api('GET','/api/alerts/recent?since_id=0'),
-  ]).catch(()=>[{},{},[]]);
+    api('GET','/api/uniform/stats'),
+  ]).catch(()=>[{},{},[], {}]);
 
   document.getElementById('aTotal').textContent=st.total_students||'—';
   document.getElementById('aPresent').textContent=st.present_today||'—';
   document.getElementById('aRate').textContent=(st.attendance_rate||0)+'%';
   document.getElementById('aAtten').textContent=(st.avg_attention||0)+'%';
   document.getElementById('aAlerts').textContent=st.total_alerts||'0';
+  document.getElementById('aUniform').textContent=(uniformStats&&uniformStats.rate!=null?uniformStats.rate:0)+'%';
 
   const tbody=document.getElementById('adminTbody');
   if(att&&att.length){
@@ -1846,12 +1939,17 @@ async function initAdmin() {
   loadExistingAlerts(alerts);
 
   S.pollTimer=setInterval(async()=>{
-    const s2=await api('GET','/api/attendance/stats').catch(()=>null);
-    if(!s2) return;
-    document.getElementById('aPresent').textContent=s2.present_today;
-    document.getElementById('aRate').textContent=s2.attendance_rate+'%';
-    document.getElementById('aAtten').textContent=(s2.avg_attention||0)+'%';
-    document.getElementById('aAlerts').textContent=s2.total_alerts;
+    const [s2,us2]=await Promise.all([
+      api('GET','/api/attendance/stats').catch(()=>null),
+      api('GET','/api/uniform/stats').catch(()=>null),
+    ]);
+    if(s2){
+      document.getElementById('aPresent').textContent=s2.present_today;
+      document.getElementById('aRate').textContent=s2.attendance_rate+'%';
+      document.getElementById('aAtten').textContent=(s2.avg_attention||0)+'%';
+      document.getElementById('aAlerts').textContent=s2.total_alerts;
+    }
+    if(us2) document.getElementById('aUniform').textContent=(us2.rate||0)+'%';
     await pollAlerts();
   },6000);
 }

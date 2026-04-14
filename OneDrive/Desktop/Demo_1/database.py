@@ -63,6 +63,14 @@ def init_db():
             is_attentive INTEGER DEFAULT 1,
             timestamp    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS uniform_log (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id   INTEGER,
+            student_name TEXT    NOT NULL,
+            is_wearing   INTEGER NOT NULL,
+            timestamp    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     """)
     conn.commit()
     _migrate_alerts(conn)
@@ -254,6 +262,98 @@ def save_unknown_alert(alert_type: str = "unknown_person"):
         ("Unknown", alert_type),
     )
     conn.commit()
+
+
+def log_uniform(student_id: int, student_name: str, is_wearing: bool):
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO uniform_log (student_id, student_name, is_wearing) VALUES (?, ?, ?)",
+        (student_id, student_name, 1 if is_wearing else 0),
+    )
+    conn.commit()
+
+
+def get_today_uniform():
+    """Latest uniform status for each student today."""
+    conn = get_db()
+    today = date.today().isoformat()
+    rows = conn.execute(
+        """SELECT s.id, s.name, s.class_name,
+                  ul.is_wearing,
+                  ul.timestamp as last_checked
+           FROM students s
+           LEFT JOIN uniform_log ul ON ul.student_id = s.id
+             AND ul.id = (
+               SELECT MAX(id) FROM uniform_log
+               WHERE student_id = s.id AND date(timestamp) = ?
+             )
+           WHERE s.role = 'student'
+           ORDER BY s.name""",
+        (today,),
+    ).fetchall()
+    return [
+        {
+            "id":           r["id"],
+            "name":         r["name"],
+            "class_name":   r["class_name"],
+            "is_wearing":   bool(r["is_wearing"]) if r["is_wearing"] is not None else None,
+            "last_checked": r["last_checked"],
+        }
+        for r in rows
+    ]
+
+
+def get_uniform_weekly():
+    """7-day average compliance per student."""
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT student_id, student_name,
+                  ROUND(AVG(is_wearing) * 100, 1) AS avg_compliance
+           FROM uniform_log
+           WHERE timestamp >= datetime('now', '-7 days')
+           GROUP BY student_id
+           ORDER BY avg_compliance DESC""",
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_uniform_stats():
+    """Today's class-level uniform stats."""
+    conn = get_db()
+    today = date.today().isoformat()
+    total = conn.execute(
+        "SELECT COUNT(*) FROM students WHERE role='student'"
+    ).fetchone()[0]
+
+    # Students who have been checked today
+    checked = conn.execute(
+        """SELECT student_id, is_wearing
+           FROM uniform_log ul
+           WHERE date(timestamp) = ?
+             AND id = (SELECT MAX(id) FROM uniform_log
+                       WHERE student_id = ul.student_id AND date(timestamp) = ?)""",
+        (today, today),
+    ).fetchall()
+
+    wearing     = sum(1 for r in checked if r["is_wearing"] == 1)
+    not_wearing = sum(1 for r in checked if r["is_wearing"] == 0)
+    checked_ct  = len(checked)
+    rate        = round(wearing / checked_ct * 100) if checked_ct else 0
+
+    weekly = conn.execute(
+        """SELECT ROUND(AVG(is_wearing) * 100, 1)
+           FROM uniform_log
+           WHERE timestamp >= datetime('now', '-7 days')"""
+    ).fetchone()[0]
+
+    return {
+        "total":        total,
+        "wearing":      wearing,
+        "not_wearing":  not_wearing,
+        "checked":      checked_ct,
+        "rate":         rate,
+        "weekly_avg":   round(weekly or 0, 1),
+    }
 
 
 # ── Student management ───────────────────────────────────────────────────────

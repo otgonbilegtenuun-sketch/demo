@@ -64,6 +64,23 @@ def _on_unknown_face(face_idx: int):
     print(f"[ALERT] Unknown person detected in exam mode (face slot #{face_idx})")
 
 
+_uniform_log_times: dict = {}   # face_idx -> last_log_timestamp
+_UNIFORM_LOG_INTERVAL = 60.0    # log at most once per minute per face slot
+
+
+def _on_uniform(face_idx: int, student_name: str, is_wearing: bool):
+    """Log uniform status for a recognised student (rate-limited)."""
+    global _uniform_log_times
+    now = time.time()
+    if now - _uniform_log_times.get(face_idx, 0) < _UNIFORM_LOG_INTERVAL:
+        return
+    _uniform_log_times[face_idx] = now
+    conn = db.get_db()
+    row = conn.execute("SELECT id FROM students WHERE name=?", (student_name,)).fetchone()
+    if row:
+        db.log_uniform(row["id"], student_name, is_wearing)
+
+
 def _on_phone_suspect(name: str):
     """Called when down-gaze threshold triggers a phone-use suspicion."""
     conn = db.get_db()
@@ -80,6 +97,7 @@ def _on_phone_suspect(name: str):
 camera.on_recognition   = _on_face_recognized
 camera.on_unknown_face  = _on_unknown_face
 camera.on_phone_suspect = _on_phone_suspect
+camera.on_uniform       = _on_uniform
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -185,6 +203,7 @@ async def camera_status():
                 "name":         f.get("name", "Unknown"),
                 "attentive":    f.get("attentive"),
                 "looking_down": f.get("looking_down"),
+                "uniform_on":   f.get("uniform_on"),
             }
             for f in faces
         ],
@@ -291,6 +310,23 @@ async def phone_alert(body: PhoneBody = None):
     name = (body.student_name if body and body.student_name else s["name"])
     db.save_alert(s["id"], name, "phone_detected")
     return {"success": True, "student": name}
+
+
+# ── Uniform ───────────────────────────────────────────────────────────────────
+
+@app.get("/api/uniform/today")
+async def uniform_today():
+    return db.get_today_uniform()
+
+
+@app.get("/api/uniform/stats")
+async def uniform_stats():
+    return db.get_uniform_stats()
+
+
+@app.get("/api/uniform/weekly")
+async def uniform_weekly():
+    return db.get_uniform_weekly()
 
 
 # ── Reset ─────────────────────────────────────────────────────────────────────
