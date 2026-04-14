@@ -309,8 +309,8 @@ class CameraProcessor:
                 color  = (128, 0, 200)   # purple = unknown/intruder
                 status = "ZORCHIGCH"
             elif phone_detected:
-                color  = (0, 185, 80)    # GREEN face box when phone detected
-                status = "UTAAS"
+                color  = (0, 0, 220)     # RED face box when phone detected
+                status = "Phone Detected"
             elif self._exam_mode and sideways:
                 color  = (0, 0, 220)     # red = suspicious glance
                 status = "SUSPICIOUS"
