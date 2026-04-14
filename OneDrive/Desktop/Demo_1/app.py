@@ -5,10 +5,12 @@ All page routes return the same index.html (SPA with JS routing).
 API routes are prefixed with /api/.
 """
 
+import asyncio
 import os
 import time
 from typing import List, Optional
 
+import cv2
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
@@ -121,9 +123,37 @@ async def page_students():         return serve_html()
 
 @app.get("/video_feed")
 async def video_feed():
+    async def _stream():
+        _ph = None  # cached placeholder frame bytes
+        while True:
+            frame = camera.get_frame()
+            if frame is None:
+                if _ph is None:
+                    ph = np.zeros((480, 640, 3), dtype=np.uint8)
+                    cv2.rectangle(ph, (0, 0), (640, 480), (240, 242, 247), -1)
+                    cv2.putText(ph, "EduGuard AI", (195, 210),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.1, (79, 70, 229), 2)
+                    cv2.putText(ph, "Камер эхлүүлэх товчийг дарна уу", (115, 260),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (120, 120, 140), 1)
+                    _, buf = cv2.imencode(".jpg", ph, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                    _ph = buf.tobytes()
+                data = _ph
+            else:
+                _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                data = buf.tobytes()
+
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n"
+                + data
+                + b"\r\n"
+            )
+            await asyncio.sleep(0.033)
+
     return StreamingResponse(
-        camera.generate_mjpeg(),
+        _stream(),
         media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-cache, no-store"},
     )
 
 

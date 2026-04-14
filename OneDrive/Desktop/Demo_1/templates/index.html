@@ -847,7 +847,7 @@ function ico(id,cls='icon'){return `<svg class="${cls}"><use href="#${id}"/></sv
   </p>
 
   <div class="monitor-grid">
-    <img id="videoStream" src="/video_feed" alt="Live feed">
+    <img id="videoStream" src="" alt="Live feed" style="background:#000;min-height:200px">
     <div>
       <div class="card mb16">
         <div class="card-title" data-i18n="detected_faces">Илрүүлсэн нүүрнүүд</div>
@@ -1358,6 +1358,8 @@ function go(e, path) {
   if (window.location.pathname === path) return;
   clearInterval(S.pollTimer); clearInterval(S.monTimer);
   stopEnrollCam();
+  // Stop MJPEG stream when leaving monitor page so thread is freed
+  if (window.location.pathname === '/monitor') _setVideoSrc(false);
   history.pushState({}, '', path);
   showPage(path);
 }
@@ -1590,6 +1592,16 @@ async function submitEnroll() {
 
 // ═════════════════════ MONITOR ═══════════════════════════════════════════════
 
+function _setVideoSrc(on) {
+  const img = document.getElementById('videoStream');
+  if (on) {
+    // Add timestamp to bust any browser cache and force reconnect
+    img.src = '/video_feed?t=' + Date.now();
+  } else {
+    img.src = '';
+  }
+}
+
 async function initMonitor() {
   const st = await api('GET','/api/camera/status').catch(()=>({running:false,exam_mode:false,faces:[]}));
   document.getElementById('monExamToggle').checked = st.exam_mode;
@@ -1598,6 +1610,9 @@ async function initMonitor() {
   if (st.running) {
     document.getElementById('btnStartMon').style.display='none';
     document.getElementById('btnStopMon').style.display='inline-flex';
+    _setVideoSrc(true);
+  } else {
+    _setVideoSrc(false);
   }
   const existing = await api('GET','/api/alerts/recent?since_id=0').catch(()=>[]);
   loadExistingAlerts(existing);
@@ -1615,6 +1630,7 @@ async function startMonCam() {
   document.getElementById('btnStartMon').style.display='none';
   document.getElementById('btnStopMon').style.display='inline-flex';
   updateCamPill(true);
+  _setVideoSrc(true);
   toast(t('cam_on'),'success');
 }
 
@@ -1623,6 +1639,7 @@ async function stopMonCam() {
   document.getElementById('btnStartMon').style.display='inline-flex';
   document.getElementById('btnStopMon').style.display='none';
   updateCamPill(false);
+  _setVideoSrc(false);
   toast(t('cam_off'),'info');
 }
 
