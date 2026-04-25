@@ -1,0 +1,305 @@
+/* ── Enroll page ───────────────────────────────────────────────────────────── */
+.enroll-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 24px;
+  align-items: start;
+  max-width: 900px;
+}
+.cam-box {
+  background: #F8FAFC;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  height: 260px;
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+  transition: border-color .2s;
+}
+.cam-box.active { border-style: solid; border-color: var(--accent); }
+#enrollVideo { width: 100%; height: 100%; object-fit: cover; display: none; transform: scaleX(-1); }
+.cam-placeholder {
+  text-align: center; padding: 20px; color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.cam-ph-icon {
+  width: 56px; height: 56px;
+  background: var(--surface2); border-radius: 14px;
+  display: flex; align-items: center; justify-content: center; color: var(--accent);
+}
+.cam-ph-title { font-size: .92rem; font-weight: 700; color: var(--text); }
+.cam-ph-hint  { font-size: .78rem; color: var(--muted); }
+
+.upload-slots { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+.upload-slot  { display: flex; flex-direction: column; gap: 6px; }
+.upload-label {
+  font-size: .75rem; font-weight: 700; color: var(--muted);
+  text-align: center; text-transform: uppercase; letter-spacing: .04em;
+}
+.upload-box {
+  aspect-ratio: 3/4;
+  background: #F8FAFC;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  transition: border-color .2s, background .2s;
+}
+.upload-box:hover   { border-color: var(--accent); background: var(--accent-lt); }
+.upload-box.has-img { border-style: solid; border-color: var(--accent); }
+.upload-box img     { width: 100%; height: 100%; object-fit: cover; }
+.upload-ph {
+  text-align: center; color: var(--muted);
+  font-size: .75rem; padding: 10px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+
+.capture-dots { display: flex; gap: 10px; align-items: center; margin: 16px 0 0; }
+.cdot {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 2px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: .75rem; font-weight: 700; color: var(--muted);
+  transition: all .2s;
+}
+.cdot.done   { background: var(--success); border-color: var(--success); color: #fff; }
+.cdot.active { border-color: var(--accent); color: var(--accent); background: var(--accent-lt); }
+
+.enroll-tabs {
+  display: flex;
+  background: #F3F4F6; border-radius: 10px;
+  padding: 4px; gap: 4px;
+  margin-bottom: 16px;
+}
+.enroll-tab {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 18px;
+  font-size: .84rem; font-weight: 600; color: var(--muted);
+  cursor: pointer; border-radius: 7px; flex: 1; justify-content: center;
+  transition: all .15s; user-select: none;
+}
+.enroll-tab:hover  { color: var(--text); }
+.enroll-tab.active { background: #fff; color: var(--accent); box-shadow: 0 1px 4px rgba(0,0,0,.10); }
+.enroll-panel        { display: none; }
+.enroll-panel.active { display: block; }
+
+.enroll-form-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  position: sticky; top: 76px;
+}
+.enroll-form-head {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+.enroll-form-head h3 { font-size: .92rem; font-weight: 800; color: var(--text); letter-spacing: -.01em; margin: 0; }
+.enroll-form-head p  { font-size: .75rem; color: var(--muted); margin: 3px 0 0; }
+.enroll-form-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.enroll-field label {
+  display: block; font-size: .78rem; font-weight: 700;
+  color: var(--text); margin-bottom: 5px; letter-spacing: .01em;
+}
+.enroll-field .form-control { width: 100%; padding: 9px 12px; font-size: .88rem; }
+.enroll-divider { height: 1px; background: var(--border); margin: 2px 0; }
+.btn-enroll-submit {
+  width: 100%; padding: 11px; font-size: .92rem; font-weight: 700;
+  background: var(--accent); color: #fff; border: none; border-radius: var(--radius-sm);
+  cursor: pointer; font-family: 'Outfit', sans-serif;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: background .15s, transform .15s;
+}
+.btn-enroll-submit:hover:not(:disabled) { background: #A0622A; transform: translateY(-1px); }
+.btn-enroll-submit:disabled { opacity: .45; cursor: not-allowed; }
+.enroll-test-section {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  background: #FAFAFA;
+}
+.enroll-test-label {
+  font-size: .72rem; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px;
+}
+
+/* ── Form controls ─────────────────────────────────────────────────────────── */
+.form-group { margin-bottom: 16px; }
+.form-group label, .form-label {
+  display: block;
+  font-size: .82rem; font-weight: 600;
+  color: var(--text); margin-bottom: 6px;
+}
+.form-control {
+  width: 100%;
+  padding: 10px 13px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: .9rem;
+  font-family: 'Outfit', 'Noto Sans Mongolian', sans-serif;
+  transition: border-color .15s, box-shadow .15s;
+  outline: none;
+}
+.form-control:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(21,128,61,.12); }
+.form-control option { background: var(--surface); }
+
+/* ── Monitor page ──────────────────────────────────────────────────────────── */
+.monitor-grid { display: grid; grid-template-columns: 1fr 290px; gap: 20px; align-items: start; }
+
+.upload-progress-wrap {
+  display: none;
+  margin-top: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  min-width: 220px;
+}
+.upload-progress-bar-bg { background: var(--border); border-radius: 4px; height: 7px; overflow: hidden; margin-bottom: 5px; }
+.upload-progress-bar    { background: var(--accent); height: 100%; width: 0%; border-radius: 4px; transition: width .1s linear; }
+.upload-progress-label  { font-size: .75rem; color: var(--muted); display: flex; justify-content: space-between; }
+
+#videoStream { width: 100%; border-radius: var(--radius); border: 1px solid var(--border); display: block; background: #000; }
+
+/* ── Face panel ────────────────────────────────────────────────────────────── */
+.face-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface2);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  font-size: .84rem;
+  animation: slideInRight .28s ease both;
+  transition: background .2s;
+}
+.face-led { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.face-item-name   { font-weight: 600; }
+.face-item-status { font-size: .75rem; color: var(--muted); }
+.down-indicator {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: .74rem; font-weight: 600;
+  color: var(--warning);
+  background: #FEF3C7;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+/* ── Role cards (home/hub) ─────────────────────────────────────────────────── */
+.role-cards { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; margin-top: 24px; }
+@media(max-width:640px){ .role-cards { grid-template-columns: 1fr; } }
+.role-card {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 24px;
+  text-decoration: none;
+  color: var(--text);
+  box-shadow: var(--shadow);
+  display: block;
+  transition: transform .22s cubic-bezier(.34,1.4,.64,1), box-shadow .22s ease, background .18s, border-color .18s;
+}
+.role-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-6px) scale(1.01);
+  box-shadow: var(--shadow-lg);
+  background: #F0FDF4;
+}
+.role-card-icon {
+  width: 52px; height: 52px;
+  border-radius: 14px;
+  background: var(--accent-lt);
+  color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 16px;
+}
+.role-card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 6px; }
+.role-card p  { font-size: .85rem; color: var(--muted); line-height: 1.55; }
+.role-card .arrow { margin-top: 18px; color: var(--accent); font-size: .84rem; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+
+.feat-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.chip {
+  background: var(--accent-lt); color: var(--accent); padding: 4px 13px; border-radius: 999px;
+  font-size: .78rem; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid rgba(21,128,61,.12);
+  transition: transform .15s, box-shadow .15s;
+}
+.chip:hover { transform: translateY(-2px); box-shadow: 0 3px 8px rgba(21,128,61,.18); }
+
+/* ── Parent/student hero ───────────────────────────────────────────────────── */
+.student-hero { display: flex; align-items: center; gap: 18px; }
+.student-avatar {
+  width: 64px; height: 64px;
+  border-radius: 16px;
+  background: var(--accent-lt);
+  color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+.ring-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.ring-val  { font-size: 1.8rem; font-weight: 800; letter-spacing: -.02em; }
+.ring-sub  { font-size: .75rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+
+/* ── Auth pages ────────────────────────────────────────────────────────────── */
+.auth-center {
+  min-height: calc(100vh - 64px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 32px 16px;
+}
+.auth-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 40px;
+  width: 100%; max-width: 420px;
+  box-shadow: var(--shadow-lg);
+}
+.auth-card h2  { font-size: 1.5rem; font-weight: 800; letter-spacing: -.02em; margin-bottom: 6px; }
+.auth-card .auth-sub { color: var(--muted); font-size: .88rem; margin-bottom: 28px; }
+.auth-footer {
+  text-align: center; margin-top: 18px;
+  font-size: .84rem; color: var(--muted);
+}
+.auth-footer a { color: var(--accent); font-weight: 600; text-decoration: none; cursor: pointer; }
+.auth-footer a:hover { text-decoration: underline; }
+
+.role-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 5px 14px;
+  font-size: .82rem; font-weight: 700; color: var(--accent);
+  margin-bottom: 20px;
+}
+.auth-role-grid {
+  display: grid; grid-template-columns: repeat(3,1fr);
+  gap: 12px; margin-top: 20px;
+}
+.auth-role-card {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 22px 10px 18px;
+  border: 2px solid var(--border); border-radius: 14px;
+  cursor: pointer; transition: all .18s;
+  background: var(--surface);
+  font-size: .85rem; font-weight: 700; color: var(--text); text-align: center;
+}
+.auth-role-card:hover {
+  border-color: var(--accent); background: var(--accent-lt);
+  transform: translateY(-4px); box-shadow: var(--shadow);
+}
+
+/* ── About page ────────────────────────────────────────────────────────────── */
+.about-wrap { max-width: 760px; margin: 0 auto; padding: 48px 24px; }
+.about-wrap h1 { font-size: 2rem; font-weight: 900; letter-spacing: -.03em; margin-bottom: 10px; }
+.about-section {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 28px; margin-bottom: 20px; box-shadow: var(--shadow);
+}
+.about-section h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+.about-section p, .about-section li { color: var(--muted); font-size: .9rem; line-height: 1.65; }
+.about-section ul { padding-left: 20px; }
+.about-section li { margin-bottom: 6px; }

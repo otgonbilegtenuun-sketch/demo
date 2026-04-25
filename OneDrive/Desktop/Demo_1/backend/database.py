@@ -3,12 +3,15 @@ database.py — SQLite setup, queries, and demo seed data.
 All tables use WAL mode for safe concurrent access from the camera thread.
 """
 
+import os
 import sqlite3
 import threading
 import random
+import hashlib
+import secrets
 from datetime import date, datetime
 
-DB_PATH = "classroom.db"
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "classroom.db")
 _thread_local = threading.local()
 
 
@@ -71,10 +74,22 @@ def init_db():
             is_wearing   INTEGER NOT NULL,
             timestamp    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS users (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            username      TEXT    NOT NULL UNIQUE,
+            password_hash TEXT    NOT NULL,
+            role          TEXT    NOT NULL CHECK(role IN ('teacher','parent','admin')),
+            student_id    INTEGER,
+            full_name     TEXT,
+            created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (student_id) REFERENCES students(id)
+        );
     """)
     conn.commit()
     _migrate_alerts(conn)
     _seed_demo_data(conn)
+    _seed_demo_users(conn)
 
 
 def _migrate_alerts(conn: sqlite3.Connection):
@@ -97,7 +112,7 @@ def _migrate_alerts(conn: sqlite3.Connection):
                 ALTER TABLE alerts_v2 RENAME TO alerts;
             """)
             conn.commit()
-            print("[EduGuard] Migrated alerts table: student_id is now nullable")
+            print("[Mergen AI] Migrated alerts table: student_id is now nullable")
             break
 
 
@@ -117,47 +132,13 @@ def _seed_demo_data(conn: sqlite3.Connection):
     ]
 
     for name, class_name, role in demo_students:
-        cur = conn.execute(
+        conn.execute(
             "INSERT INTO students (name, class_name, role) VALUES (?, ?, ?)",
             (name, class_name, role),
         )
-        sid = cur.lastrowid
 
-        # Seed realistic attendance data for today
-        attention_pct = random.randint(68, 94)
-        total = 60
-        att_frames = int(total * attention_pct / 100)
-        hour = random.randint(8, 9)
-        minute = random.randint(0, 45)
-        arrived = f"{today} {hour:02d}:{minute:02d}:00"
-
-        conn.execute(
-            """INSERT OR IGNORE INTO attendance
-               (student_id, date, arrived_at, last_seen, attention_frames, total_frames)
-               VALUES (?, ?, ?, datetime('now'), ?, ?)""",
-            (sid, today, arrived, att_frames, total),
-        )
-
-        # Seed attention log (last 30 minutes, every 2 min)
-        for i in range(15):
-            is_att = 1 if random.random() < attention_pct / 100 else 0
-            offset = -(30 - i * 2)
-            conn.execute(
-                """INSERT INTO attention_log (student_id, student_name, is_attentive, timestamp)
-                   VALUES (?, ?, ?, datetime('now', ? || ' minutes'))""",
-                (sid, name, is_att, str(offset)),
-            )
-
-    # Seed two demo alerts
-    conn.execute(
-        """INSERT INTO alerts (student_id, student_name, alert_type, timestamp)
-           VALUES (1, 'Tenuun', 'suspicious_glance', datetime('now', '-12 minutes'))"""
-    )
-    conn.execute(
-        """INSERT INTO alerts (student_id, student_name, alert_type, timestamp)
-           VALUES (2, 'Otgonbileg', 'phone_detected', datetime('now', '-6 minutes'))"""
-    )
     conn.commit()
+    print("[Mergen AI] Demo students seeded (attendance will be recorded from camera)")
 
 
 # ── Student CRUD ──────────────────────────────────────────────────────────────
@@ -175,7 +156,7 @@ def save_student(name: str, class_name: str, role: str, embedding) -> int:
     return cur.lastrowid
 
 
-def find_matching_student(embedding, threshold: float = 0.65):
+def find_matching_student(embedding, threshold: float = 0.50):
     """Cosine-similarity lookup against enrolled face embeddings."""
     import numpy as np
     conn = get_db()
@@ -505,6 +486,84 @@ def get_first_student():
     conn = get_db()
     row = conn.execute("SELECT id, name, class_name FROM students ORDER BY id LIMIT 1").fetchone()
     return dict(row) if row else None
+
+
+# ── User auth ────────────────────────────────────────────────────────────────
+
+def _hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    h = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+    return f"{salt}:{h}"
+
+
+def _verify_password(password: str, stored: str) -> bool:
+    try:
+        salt, h = stored.split(":", 1)
+        return hashlib.sha256(f"{salt}{password}".encode()).hexdigest() == h
+    except Exception:
+        return False
+
+
+def _seed_demo_users(conn: sqlite3.Connection):
+    """Always ensure demo admin/teacher/parent accounts exist (idempotent)."""
+    first = conn.execute("SELECT id FROM students ORDER BY id LIMIT 1").fetchone()
+    parent_sid = first["id"] if first else None
+    seeded = 0
+    for username, password, role, sid, full_name in [
+        ("admin",    "admin123",   "admin",   None,       "Удирдлага"),
+        ("teacher1", "teacher123", "teacher", None,       "Багш Батбаяр"),
+        ("parent1",  "parent123",  "parent",  parent_sid, "Эцэг эх Болд"),
+    ]:
+        existing = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+        if not existing:
+            conn.execute(
+                "INSERT INTO users (username,password_hash,role,student_id,full_name) VALUES (?,?,?,?,?)",
+                (username, _hash_password(password), role, sid, full_name),
+            )
+            seeded += 1
+    conn.commit()
+    if seeded:
+        print(f"[Mergen AI] Demo users seeded ({seeded} added)")
+
+
+def create_user(username: str, password: str, role: str,
+                student_id=None, full_name: str = None) -> int:
+    conn = get_db()
+    cur = conn.execute(
+        "INSERT INTO users (username,password_hash,role,student_id,full_name) VALUES (?,?,?,?,?)",
+        (username, _hash_password(password), role, student_id, full_name),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def authenticate_user(username: str, password: str):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+    if not row:
+        return None
+    if not _verify_password(password, row["password_hash"]):
+        return None
+    return dict(row)
+
+
+def get_user_by_id(user_id: int):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def username_exists(username: str) -> bool:
+    conn = get_db()
+    return conn.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone() is not None
+
+
+def get_students_list():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, name, class_name FROM students WHERE role='student' ORDER BY name"
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def reset_today_data():

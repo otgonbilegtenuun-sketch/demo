@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Mergen AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Mongolian&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/nav/nav.css">
+<link rel="stylesheet" href="/static/hero/hero.css">
+<link rel="stylesheet" href="/static/pages/pages.css">
+
+</head>
+<body>
+
+<!-- ── SVG Icon Library ────────────────────────────────────────────────── -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+  </symbol>
+  <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/>
+  </symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+  </symbol>
+  <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+  </symbol>
+  <symbol id="i-video" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+  </symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+    <rect x="8" y="2" width="8" height="4" rx="1"/>
+    <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>
+  </symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+  </symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    <polyline points="9 12 11 14 15 10"/>
+  </symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+  </symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+  </symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+    <line x1="12" y1="18" x2="12.01" y2="18" stroke-width="3"/>
+  </symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+  </symbol>
+
+  <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <line x1="2" y1="12" x2="22" y2="12"/>
+    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+  </symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+  </symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+    <circle cx="12" cy="13" r="4"/>
+  </symbol>
+  <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polygon points="5 3 19 12 5 21 5 3"/>
+  </symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+  </symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+  </symbol>
+  <symbol id="i-user-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+    <circle cx="9" cy="7" r="4"/>
+    <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
+  </symbol>
+  <symbol id="i-grad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="22 10 12 5 2 10 12 15 22 10"/>
+    <path d="M6 12v5c3 3 9 3 12 0v-5"/>
+  </symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+  </symbol>
+  <symbol id="i-trend" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+    <polyline points="17 6 23 6 23 12"/>
+  </symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+  </symbol>
+  <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
+  </symbol>
+  <symbol id="i-person-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+    <circle cx="9" cy="7" r="4"/>
+    <line x1="17" y1="8" x2="23" y2="14"/>
+    <line x1="23" y1="8" x2="17" y2="14"/>
+  </symbol>
+  <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+  </symbol>
+  <symbol id="i-exit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+  </symbol>
+  <symbol id="i-person" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+  </symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+  </symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+  </symbol>
+  <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+  </symbol>
+</svg>
+
+
+
+<!-- ── Navigation ────────────────────────────────────────────────────────── -->
+<nav>
+  <div class="nav-brand" onclick="goHome()">
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 100 100" style="flex-shrink:0;border-radius:8px;">
+      <rect x="8" y="8" width="84" height="84" rx="16" fill="#F0F8FF"/>
+      <rect x="8" y="8" width="84" height="84" rx="16" fill="none" stroke="#00B37A" stroke-width="1.5"/>
+      <rect x="22" y="28" width="56" height="36" rx="6" fill="none" stroke="#00B37A" stroke-width="2.5"/>
+      <circle cx="50" cy="46" r="8" fill="#00B37A"/>
+      <circle cx="50" cy="46" r="3.5" fill="#F0F8FF"/>
+      <rect x="30" y="68" width="40" height="4" rx="2" fill="#00B37A" opacity=".35"/>
+      <rect x="36" y="75" width="28" height="3" rx="1.5" fill="#00B37A" opacity=".2"/>
+      <circle cx="22" cy="28" r="3" fill="#00B37A"/>
+      <circle cx="78" cy="28" r="3" fill="#00B37A"/>
+      <circle cx="22" cy="64" r="3" fill="#00B37A"/>
+      <circle cx="78" cy="64" r="3" fill="#00B37A"/>
+    </svg>
+    <span style="font-size:1.15rem;font-weight:800;letter-spacing:-.02em;color:var(--text);font-family:'Outfit',sans-serif">Mergen <span style="color:var(--accent)">AI</span></span>
+    <div class="nav-brand-dot"></div>
+  </div>
+
+  <!-- Teacher nav (only for teacher role) -->
+  <!-- Teacher nav -->
+  <div id="navGroupTeacherFull" class="nav-group">
+    <a href="/dashboard/teacher" onclick="go(event,'/dashboard/teacher')">
+      <svg class="icon"><use href="#i-grid"/></svg>
+      <span data-i18n="nav_teacher_dash">Самбар</span>
+    </a>
+    <a href="/students" onclick="go(event,'/students')">
+      <svg class="icon"><use href="#i-users"/></svg>
+      <span data-i18n="nav_students">Оюутнууд</span>
+    </a>
+    <a href="/enroll" onclick="go(event,'/enroll')">
+      <svg class="icon"><use href="#i-user-plus"/></svg>
+      <span data-i18n="nav_enroll">Бүртгэл</span>
+    </a>
+  </div>
+
+  <!-- Parent nav -->
+  <div class="nav-group" id="navGroupParent" style="display:none">
+    <a href="/dashboard/parent" onclick="go(event,'/dashboard/parent')"><svg class="icon"><use href="#i-users"/></svg><span data-i18n="parent_h1">Эцэг эхийн самбар</span></a>
+  </div>
+
+  <!-- Admin nav -->
+  <div class="nav-group" id="navGroupMain" style="display:none">
+    <a href="/monitor"  onclick="go(event,'/monitor')">  <svg class="icon"><use href="#i-camera"/></svg>    <span data-i18n="nav_monitor">Хяналт</span></a>
+    <a href="/students" onclick="go(event,'/students')"> <svg class="icon"><use href="#i-users"/></svg>     <span data-i18n="nav_students">Оюутнууд</span></a>
+    <a href="/enroll"   onclick="go(event,'/enroll')">   <svg class="icon"><use href="#i-user-plus"/></svg> <span data-i18n="nav_enroll">Бүртгэл</span></a>
+  </div>
+
+  <!-- Landing section links — always visible, spread out like CommonApp -->
+  <div class="nav-links" id="navLandingLinks">
+    <a onclick="scrollToSection('lp-problems',event)" data-i18n="nav_sec_prob">Яагаад хэрэгтэй вэ?</a>
+    <a onclick="scrollToSection('lp-features',event)" data-i18n="nav_sec_feat">Боломжууд</a>
+    <a onclick="scrollToSection('lp-about-section',event)" data-i18n="nav_sec_about">Бидний тухай</a>
+    <a onclick="scrollToSection('lp-cta',event)" data-i18n="nav_sec_cta">Эхлэх</a>
+  </div>
+
+  <div class="nav-right">
+    <div class="exam-wrap" id="navExamWrap" style="display:none">
+      <span class="exam-label" data-i18n="exam_mode">Шалгалтын горим</span>
+      <label class="toggle">
+        <input type="checkbox" id="navExamToggle" onchange="toggleExamMode(this.checked)">
+        <span class="toggle-track"></span>
+        <span class="toggle-thumb"></span>
+      </label>
+    </div>
+    <button class="btn-nav-logout" id="navResetBtn" onclick="resetDemo()" style="display:none">
+      <svg class="icon-sm"><use href="#i-refresh"/></svg>
+      <span data-i18n="btn_reset">Дахилт</span>
+    </button>
+
+    <!-- Auth: logged-in profile chip + logout -->
+    <div id="navUser" style="display:none;align-items:center;gap:10px">
+      <div class="nav-profile">
+        <div class="nav-profile-avatar" id="navUserAvatar">?</div>
+        <div class="nav-profile-info">
+          <span class="nav-profile-name" id="navUserName"></span>
+        </div>
+      </div>
+      <button class="btn-nav-logout" onclick="logout()">
+        <svg class="icon-sm"><use href="#i-exit"/></svg>
+        <span data-i18n="btn_logout">Гарах</span>
+      </button>
+    </div>
+    <!-- Auth: login + register buttons (not logged in) -->
+    <button id="navLoginBtn" class="btn-nav-signin" onclick="go(event,'/login')">
+      <span data-i18n="btn_login_nav">Нэвтрэх</span>
+    </button>
+    <button id="navRegisterBtn" class="btn-nav-create" onclick="go(event,'/signup')">
+      <span data-i18n="btn_register">Бүртгүүлэх</span>
+    </button>
+
+    <div class="lang-btn">
+      <svg class="lang-globe" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+      </svg>
+      <button class="lang-opt active" id="btnMN" onclick="setLang('mn')">МН</button>
+      <span class="lang-sep">/</span>
+      <button class="lang-opt" id="btnEN" onclick="setLang('en')">EN</button>
+    </div>
+  </div>
+</nav>
+
+<!-- ── Toast ─────────────────────────────────────────────────────────────── -->
+<div id="toast"></div>
+
+<!-- ═══════════════════ LANDING (full marketing page) ════════════════ -->
+<div id="page-landing" class="page">
+
+  <!-- ── HERO ── -->
+  <section class="lp-hero" id="lp-hero-section">
+    <div class="lp-orb lp-orb-1"></div>
+    <div class="lp-orb lp-orb-2"></div>
+    <div class="lp-orb lp-orb-3"></div>
+    <div class="lp-shimmer"></div>
+    <div class="lp-dot lp-dot-1"></div>
+    <div class="lp-dot lp-dot-2"></div>
+    <div class="lp-dot lp-dot-3"></div>
+    <div class="lp-container">
+      <h1 class="lp-h1">Mergen <span class="lp-h1-accent">AI</span></h1>
+      <p class="lp-hero-sub" data-i18n="lp_hero_sub">
+        AI-д суурилсан ирц бүртгэл, анхаарлын хяналт болон шалгалтын аюулгүй байдлын платформ — нэг дор
+      </p>
+      <div class="lp-ctas">
+        <button class="btn-lp-primary" onclick="go(event,'/login')">
+          <svg class="icon"><use href="#i-person"/></svg>
+          <span data-i18n="btn_signin">Нэвтрэх</span>
+        </button>
+        <button class="btn-lp-secondary" onclick="go(event,'/signup')">
+          <svg class="icon"><use href="#i-user-plus"/></svg>
+          <span data-i18n="btn_register">Бүртгүүлэх</span>
+        </button>
+      </div>
+      <div class="lp-stats-row">
+        <div class="lp-stat-item">
+          <span class="lp-stat-num">600+</span>
+          <span class="lp-stat-desc" data-i18n="mstat1">Монгол дахь хувийн сургууль</span>
+        </div>
+        <div class="lp-stat-item" style="border-left:1px solid rgba(255,255,255,.15);padding-left:32px">
+          <span class="lp-stat-num">99%</span>
+          <span class="lp-stat-desc" data-i18n="hero_stat2">Ирц бүртгэлийн нарийвчлал</span>
+        </div>
+        <div class="lp-stat-item" style="border-left:1px solid rgba(255,255,255,.15);padding-left:32px">
+          <span class="lp-stat-num">&lt;1s</span>
+          <span class="lp-stat-desc" data-i18n="hero_stat3">Нүүр таних хугацаа</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- wave divider -->
+  <div class="lp-wave" style="background:linear-gradient(135deg,#5C2D0A,#B87333)">
+    <svg viewBox="0 0 1440 56" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" style="height:56px;fill:#FDF8F0">
+      <path d="M0,28 C360,56 1080,0 1440,28 L1440,56 L0,56 Z"/>
+    </svg>
+  </div>
+
+  <!-- ── PROBLEMS ── -->
+  <div class="lp-section" id="lp-problems">
+    <div class="lp-sect-hd">
+      <h2 data-i18n="lp_prob_h">Яагаад хэрэгтэй вэ?</h2>
+      <p data-i18n="lp_prob_sub">Монголын сургуулиуд өнөөдөр тулгарч буй бодит асуудлууд</p>
+    </div>
+    <div class="lp-3col">
+      <div class="lp-feat" style="border-top:3px solid var(--danger);animation-delay:.05s">
+        <div class="lp-feat-ico" style="background:#FEE2E2;color:var(--danger)"><svg class="icon"><use href="#i-clock"/></svg></div>
+        <h3 data-i18n="prob1_h">Цагийн алдагдал</h3>
+        <p data-i18n="prob1_p">Гар ирц бүртгэл 10–15 мин/цаг зарцуулдаг → жилдээ 200+ цаг алддаг</p>
+      </div>
+      <div class="lp-feat" style="border-top:3px solid var(--warning);animation-delay:.1s">
+        <div class="lp-feat-ico" style="background:#FEF3C7;color:var(--warning)"><svg class="icon"><use href="#i-alert"/></svg></div>
+        <h3 data-i18n="prob2_h">Шалгалтын хуурамч байдал</h3>
+        <p data-i18n="prob2_p">Азийн сургуулийн 60%+ оюутан шалгалтын залилан хийсэн гэж хүлээн зөвшөөрдөг</p>
+      </div>
+      <div class="lp-feat" style="border-top:3px solid var(--accent);animation-delay:.15s">
+        <div class="lp-feat-ico"><svg class="icon"><use href="#i-eye"/></svg></div>
+        <h3 data-i18n="prob3_h">Анхаарлын хяналтгүй байдал</h3>
+        <p data-i18n="prob3_p">Багш нар 30+ оюутны анхааралыг нэгэн зэрэг хэмждэг объектив хэрэгсэлгүй</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── FEATURES ── -->
+  <div id="lp-features" style="background:var(--surface2);padding:72px 0">
+    <div class="lp-section" style="padding-top:0;padding-bottom:0">
+      <div class="lp-sect-hd">
+        <h2 data-i18n="lp_feat_h">Боломжууд</h2>
+        <p data-i18n="lp_feat_sub">Нэг платформ дээр бүгдийг шийддэг</p>
+      </div>
+      <div class="lp-3col">
+        <div class="lp-feat" style="animation-delay:.05s">
+          <div class="lp-feat-ico"><svg class="icon"><use href="#i-users"/></svg></div>
+          <h3 data-i18n="cap1_h">Нүүр таних ирц</h3>
+          <p data-i18n="cap1">Нүүр таних технологиор ирцийг автоматаар бүртгэнэ</p>
+        </div>
+        <div class="lp-feat" style="animation-delay:.08s">
+          <div class="lp-feat-ico"><svg class="icon"><use href="#i-eye"/></svg></div>
+          <h3 data-i18n="cap2_h">Анхаарлын хяналт</h3>
+          <p data-i18n="cap2">Оюутны анхааралыг хэмжиж, бодит цагийн оноо гаргана</p>
+        </div>
+        <div class="lp-feat" style="animation-delay:.11s">
+          <div class="lp-feat-ico"><svg class="icon"><use href="#i-grad"/></svg></div>
+          <h3 data-i18n="cap3_h">Шалгалтын аюулгүй байдал</h3>
+          <p data-i18n="cap3">Шалгалтын горимд утас хэрэглэлт болон сэжигтэй хөдөлгөөнийг илрүүлнэ</p>
+        </div>
+        <div class="lp-feat" style="animation-delay:.14s">
+          <div class="lp-feat-ico"><svg class="icon"><use href="#i-shield"/></svg></div>
+          <h3 data-i18n="cap4_h">Олон самбар</h3>
+          <p data-i18n="cap4">Багш, эцэг эх, удирдлагад тус тусдаа самбар, мэдэгдэл</p>
+        </div>
+        <div class="lp-feat" style="animation-delay:.17s">
+          <div class="lp-feat-ico"><svg class="icon"><use href="#i-bell"/></svg></div>
+          <h3 data-i18n="cap5_h">Edge AI</h3>
+          <p data-i18n="cap5">Интернэтгүйгээр ажиллах боломжтой (Edge AI)</p>
+        </div>
+        <div class="lp-feat" style="animation-delay:.2s">
+          <div class="lp-feat-ico"><svg class="icon"><use href="#i-check"/></svg></div>
+          <h3 data-i18n="cap6_h">Дүрэмт хувцасны хяналт</h3>
+          <p data-i18n="cap6">Дүрэмт хувцас өмссөн эсэхийг автоматаар шалгана</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ABOUT + STATS (dark) ── -->
+  <div class="lp-dark" id="lp-about-section">
+    <div class="lp-dark-inner">
+      <div class="lp-sect-hd" style="margin-bottom:40px">
+        <h2 data-i18n="about_h">Бидний тухай</h2>
+        <p data-i18n="lp_about_sub">Монголын боловсролыг технологиор дэмжих зорилгоор байгуулагдсан</p>
+      </div>
+      <div class="lp-about-grid">
+        <div>
+          <p style="font-size:.96rem;color:rgba(255,255,255,.88);line-height:1.75;margin-bottom:20px" data-i18n="about_p1">
+            Mergen AI нь камерын дүрс боловсруулалт болон хиймэл оюун ухааныг ашиглан ангийн үйл ажиллагааг бодит цагаар ажиглаж, багш болон эцэг эхэд мэдээлэл өгдөг систем юм.
+          </p>
+          <div class="lp-cap-item"><div class="lp-cap-dot"></div><span data-i18n="cap1">Нүүр таних технологиор ирцийг автоматаар бүртгэнэ</span></div>
+          <div class="lp-cap-item"><div class="lp-cap-dot"></div><span data-i18n="cap2">Оюутны анхааралыг хэмжиж, бодит цагийн оноо гаргана</span></div>
+          <div class="lp-cap-item"><div class="lp-cap-dot"></div><span data-i18n="cap3">Шалгалтын горимд утас хэрэглэлт болон сэжигтэй хөдөлгөөнийг илрүүлнэ</span></div>
+          <div class="lp-cap-item"><div class="lp-cap-dot"></div><span data-i18n="cap4">Багш, эцэг эх, удирдлагад тус тусдаа самбар, мэдэгдэл</span></div>
+          <div class="lp-cap-item"><div class="lp-cap-dot"></div><span data-i18n="cap5">Интернэтгүйгээр ажиллах боломжтой (Edge AI)</span></div>
+        </div>
+        <div>
+          <div class="lp-prob-item">
+            <div style="width:36px;height:36px;border-radius:9px;background:rgba(239,68,68,.3);color:#FCA5A5;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg class="icon-sm"><use href="#i-clock"/></svg></div>
+            <div><div style="font-weight:700;font-size:.9rem;margin-bottom:3px;color:#fff" data-i18n="prob1_h">Цагийн алдагдал</div><div style="font-size:.83rem;color:rgba(255,255,255,.7)" data-i18n="prob1_p">Гар ирц бүртгэл 10–15 мин/цаг зарцуулдаг → жилдээ 200+ цаг алддаг</div></div>
+          </div>
+          <div class="lp-prob-item">
+            <div style="width:36px;height:36px;border-radius:9px;background:rgba(234,179,8,.25);color:#FDE68A;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg class="icon-sm"><use href="#i-alert"/></svg></div>
+            <div><div style="font-weight:700;font-size:.9rem;margin-bottom:3px;color:#fff" data-i18n="prob2_h">Шалгалтын хуурамч байдал</div><div style="font-size:.83rem;color:rgba(255,255,255,.7)" data-i18n="prob2_p">Азийн сургуулийн 60%+ оюутан шалгалтын залилан хийсэн гэж хүлээн зөвшөөрдөг</div></div>
+          </div>
+          <div class="lp-prob-item">
+            <div style="width:36px;height:36px;border-radius:9px;background:rgba(134,239,172,.25);color:#F0C27F;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg class="icon-sm"><use href="#i-eye"/></svg></div>
+            <div><div style="font-weight:700;font-size:.9rem;margin-bottom:3px;color:#fff" data-i18n="prob3_h">Анхаарлын хяналтгүй байдал</div><div style="font-size:.83rem;color:rgba(255,255,255,.7)" data-i18n="prob3_p">Багш нар 30+ оюутны анхааралыг нэгэн зэрэг хэмждэг объектив хэрэгсэлгүй</div></div>
+          </div>
+        </div>
+      </div>
+      <!-- Market stats -->
+      <div style="border-top:1px solid rgba(255,255,255,.15);padding-top:40px">
+        <div style="text-align:center;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.55);margin-bottom:28px" data-i18n="market_title">Зах зээлийн боломж</div>
+        <div class="lp-stats">
+          <div><div class="lp-stat-v">600+</div><div class="lp-stat-l" data-i18n="mstat1">Монгол дахь хувийн сургууль</div></div>
+          <div><div class="lp-stat-v">12%</div><div class="lp-stat-l" data-i18n="mstat2">Жилийн өсөлт</div></div>
+          <div><div class="lp-stat-v">$12.4B</div><div class="lp-stat-l" data-i18n="mstat3">Дэлхийн EdTech AI зах (2030)</div></div>
+          <div><div class="lp-stat-v">22%</div><div class="lp-stat-l" data-i18n="mstat4">CAGR өсөлтийн хурд</div></div>
+        </div>
+      </div>
+      <!-- Final CTA -->
+      <div id="lp-cta" style="text-align:center;margin-top:52px;padding-top:40px;border-top:1px solid rgba(255,255,255,.15)">
+        <p style="font-size:1.4rem;font-weight:800;color:#fff;margin-bottom:8px;letter-spacing:-.02em" data-i18n="lp_cta_h">Өнөөдөр эхлэх цаг болжээ</p>
+        <p style="font-size:.92rem;color:rgba(255,255,255,.7);margin-bottom:28px" data-i18n="lp_cta_sub">Бүртгүүлэн системийг туршаад үзнэ үү</p>
+        <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap">
+          <button class="btn-lp-primary" onclick="go(event,'/signup')">
+            <svg class="icon"><use href="#i-user-plus"/></svg>
+            <span data-i18n="btn_register">Бүртгүүлэх</span>
+          </button>
+          <button class="btn-lp-secondary" onclick="go(event,'/login')">
+            <svg class="icon"><use href="#i-person"/></svg>
+            <span data-i18n="btn_signin">Нэвтрэх</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── FOOTER ── -->
+  <footer class="lp-footer">
+    <div class="lp-footer-brand">
+      <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 100 100" style="border-radius:7px;flex-shrink:0">
+        <rect x="8" y="8" width="84" height="84" rx="16" fill="#F0F8FF"/>
+        <rect x="8" y="8" width="84" height="84" rx="16" fill="none" stroke="#00B37A" stroke-width="1.5"/>
+        <rect x="22" y="28" width="56" height="36" rx="6" fill="none" stroke="#00B37A" stroke-width="2.5"/>
+        <circle cx="50" cy="46" r="8" fill="#00B37A"/><circle cx="50" cy="46" r="3.5" fill="#F0F8FF"/>
+        <rect x="30" y="68" width="40" height="4" rx="2" fill="#00B37A" opacity=".35"/>
+        <circle cx="22" cy="28" r="3" fill="#00B37A"/><circle cx="78" cy="28" r="3" fill="#00B37A"/>
+        <circle cx="22" cy="64" r="3" fill="#00B37A"/><circle cx="78" cy="64" r="3" fill="#00B37A"/>
+      </svg>
+      Mergen <span style="color:#F0C27F">AI</span>
+    </div>
+    <div style="color:rgba(255,255,255,.5);font-size:.82rem">© 2026 Mergen AI. Бүх эрх хуулиар хамгаалагдсан.</div>
+    <div class="lp-footer-links">
+      <a onclick="go(event,'/about')" data-i18n="nav_about">Бидний тухай</a>
+      <a onclick="go(event,'/login')" data-i18n="btn_signin">Нэвтрэх</a>
+      <a onclick="go(event,'/signup')" data-i18n="btn_register">Бүртгүүлэх</a>
+    </div>
+  </footer>
+
+</div>
+
+<!-- ═══════════════════ LOGIN ══════════════════════════════════════════ -->
+<div id="page-login" class="page">
+  <div class="auth-center">
+    <div class="auth-card anim-scale">
+
+      <!-- Step 1: Role picker -->
+      <div id="loginStep1">
+        <h2 data-i18n="login_h2">Нэвтрэх</h2>
+        <p class="auth-sub" data-i18n="login_choose_role">Үүрэгээ сонгоно уу</p>
+        <div class="auth-role-grid">
+          <div class="auth-role-card" onclick="selectLoginRole('teacher')">
+            <div class="icon-box icon-box-md"><svg class="icon-xl"><use href="#i-grad"/></svg></div>
+            <span data-i18n="role_teacher">Багш</span>
+          </div>
+          <div class="auth-role-card" onclick="selectLoginRole('parent')">
+            <div class="icon-box icon-box-md"><svg class="icon-xl"><use href="#i-users"/></svg></div>
+            <span data-i18n="role_parent">Эцэг эх</span>
+          </div>
+          <div class="auth-role-card" onclick="selectLoginRole('admin')">
+            <div class="icon-box icon-box-md"><svg class="icon-xl"><use href="#i-shield"/></svg></div>
+            <span data-i18n="role_admin">Удирдлага</span>
+          </div>
+        </div>
+        <div class="auth-footer" style="margin-top:24px">
+          <a onclick="go(event,'/landing')" data-i18n="btn_back">← Буцах</a>
+        </div>
+      </div>
+
+      <!-- Step 2: Credentials form -->
+      <div id="loginStep2" style="display:none">
+        <div id="loginRoleBadge" class="role-badge">
+          <svg class="icon-sm"><use href="#i-person"/></svg>
+          <span id="loginRoleLabel">Нэвтрэх</span>
+        </div>
+        <h2 data-i18n="login_h2">Нэвтрэх</h2>
+        <p class="auth-sub" data-i18n="login_sub">Нэвтрэх нэр болон нууц үгээ оруулна уу</p>
+        <div id="loginError" style="display:none;background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 14px;font-size:.84rem;color:#991B1B;margin-bottom:16px"></div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="lbl_username">Нэвтрэх нэр</label>
+          <input id="loginUsername" class="form-control" type="text" autocomplete="username"
+                 data-i18n-placeholder="ph_username" placeholder="нэвтрэх нэр" onkeydown="if(event.key==='Enter')doLogin()">
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="lbl_password">Нууц үг</label>
+          <input id="loginPassword" class="form-control" type="password" autocomplete="current-password"
+                 data-i18n-placeholder="ph_password" placeholder="нууц үг" onkeydown="if(event.key==='Enter')doLogin()">
+        </div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px" onclick="doLogin()" id="loginBtn">
+          <svg class="icon"><use href="#i-person"/></svg>
+          <span data-i18n="btn_login">Нэвтрэх</span>
+        </button>
+        <div class="auth-footer" id="loginSignupLink" style="display:none">
+          <span data-i18n="login_no_acc">Бүртгэл байхгүй юу?</span>
+          <a onclick="go(event,'/signup')" data-i18n="btn_signup_link">Бүртгүүлэх</a>
+        </div>
+        <div class="auth-footer" style="margin-top:12px">
+          <a onclick="backLoginStep1()" data-i18n="btn_back">← Буцах</a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SIGNUP ════════════════════════════════════════ -->
+<div id="page-signup" class="page">
+  <div class="auth-center">
+    <div class="auth-card anim-scale">
+
+      <!-- Step 1: Role picker -->
+      <div id="signupStep1">
+        <h2 data-i18n="signup_h2">Бүртгүүлэх</h2>
+        <p class="auth-sub" data-i18n="signup_choose_role">Үүрэгээ сонгоно уу</p>
+        <div class="auth-role-grid">
+          <div class="auth-role-card" onclick="selectSignupRole('teacher')">
+            <div class="icon-box icon-box-md"><svg class="icon-xl"><use href="#i-grad"/></svg></div>
+            <span data-i18n="role_teacher">Багш</span>
+          </div>
+          <div class="auth-role-card" onclick="selectSignupRole('parent')">
+            <div class="icon-box icon-box-md"><svg class="icon-xl"><use href="#i-users"/></svg></div>
+            <span data-i18n="role_parent">Эцэг эх</span>
+          </div>
+          <div class="auth-role-card" onclick="selectSignupRole('admin')">
+            <div class="icon-box icon-box-md"><svg class="icon-xl"><use href="#i-shield"/></svg></div>
+            <span data-i18n="role_admin">Удирдлага</span>
+          </div>
+        </div>
+        <div class="auth-footer" style="margin-top:24px">
+          <a onclick="go(event,'/landing')" data-i18n="btn_back">← Буцах</a>
+        </div>
+      </div>
+
+      <!-- Step 2: Registration form -->
+      <div id="signupStep2" style="display:none">
+        <div class="role-badge">
+          <svg class="icon-sm"><use href="#i-person"/></svg>
+          <span id="signupRoleLabel">Бүртгүүлэх</span>
+        </div>
+        <h2 data-i18n="signup_h2">Бүртгүүлэх</h2>
+        <p class="auth-sub" data-i18n="signup_sub">Шинэ бүртгэл үүсгэх</p>
+        <div id="signupError" style="display:none;background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 14px;font-size:.84rem;color:#991B1B;margin-bottom:16px"></div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="lbl_fullname">Бүтэн нэр</label>
+          <input id="signupFullname" class="form-control" type="text" data-i18n-placeholder="ph_fullname" placeholder="Таны бүтэн нэр">
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="lbl_username">Нэвтрэх нэр</label>
+          <input id="signupUsername" class="form-control" type="text" autocomplete="username" data-i18n-placeholder="ph_username" placeholder="нэвтрэх нэр">
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="lbl_password">Нууц үг</label>
+          <input id="signupPassword" class="form-control" type="password" autocomplete="new-password" data-i18n-placeholder="ph_password" placeholder="нууц үг">
+        </div>
+        <div class="form-group" id="signupChildGroup" style="display:none">
+          <label class="form-label" data-i18n="lbl_child">Хүүхэд сонгох</label>
+          <select id="signupChild" class="form-control">
+            <option value="" data-i18n-opt="ph_child">— оюутан сонгоно уу —</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px" onclick="doSignup()" id="signupBtn">
+          <svg class="icon"><use href="#i-user-plus"/></svg>
+          <span data-i18n="btn_signup">Бүртгүүлэх</span>
+        </button>
+        <div class="auth-footer">
+          <span data-i18n="signup_has_acc">Бүртгэл байна уу?</span>
+          <a onclick="go(event,'/login')" data-i18n="btn_login_link">Нэвтрэх</a>
+        </div>
+        <div class="auth-footer" style="margin-top:8px">
+          <a onclick="backSignupStep1()" data-i18n="btn_back">← Буцах</a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ ABOUT ══════════════════════════════════════════ -->
+<div id="page-about" class="page">
+  <div class="about-wrap">
+    <div class="page-header anim-up">
+      <h1>Mergen <span style="color:var(--accent)">AI</span></h1>
+      <p style="color:var(--muted);font-size:1rem;margin-top:8px" data-i18n="about_sub">Ухаалаг ангийн хяналтын систем</p>
+    </div>
+    <div class="about-section anim-up" style="animation-delay:.05s">
+      <h3><svg class="icon" style="color:var(--accent)"><use href="#i-shield"/></svg> <span data-i18n="about_mission_h">Бидний эрхэм зорилго</span></h3>
+      <p data-i18n="about_mission_p">Mergen AI нь сургуулийн анги танхимын хяналтыг хиймэл оюун ухааны технологиор дэмжиж, багш болон эцэг эхчүүдэд оюутнуудын ирц, анхаарал болон хандлагын талаарх бодит цагийн мэдээллийг хүргэдэг.</p>
+    </div>
+    <div class="about-section anim-up" style="animation-delay:.1s">
+      <h3><svg class="icon" style="color:var(--accent)"><use href="#i-eye"/></svg> <span data-i18n="about_features_h">Үндсэн боломжууд</span></h3>
+      <ul>
+        <li data-i18n="about_f1">Нүүр таних технологиор оюутны ирцийг автоматаар бүртгэх</li>
+        <li data-i18n="about_f2">Анхаарлын түвшинг бодит цагт хянах</li>
+        <li data-i18n="about_f3">Шалгалтын горимд утас, зохисгүй хандлагыг илрүүлэх</li>
+        <li data-i18n="about_f4">Дүрэмт хувцасны мөрдөлтийг шалгах</li>
+        <li data-i18n="about_f5">Эцэг эхэд хүүхдийнхээ мэдээллийг шуурхай хүргэх</li>
+      </ul>
+    </div>
+    <div class="about-section anim-up" style="animation-delay:.15s">
+      <h3><svg class="icon" style="color:var(--accent)"><use href="#i-users"/></svg> <span data-i18n="about_team_h">Баг</span></h3>
+      <p data-i18n="about_team_p">Mergen AI-г Монголын залуу инженер, боловсролын мэргэжилтнүүдийн баг хөгжүүлж байна. Бид технологийг боловсролын чанар сайжруулахад ашиглахыг зорьдог.</p>
+    </div>
+    <div style="text-align:center;margin-top:32px">
+      <button class="btn btn-primary" onclick="go(event,'/landing')">
+        <svg class="icon"><use href="#i-arrow-right"/></svg>
+        <span data-i18n="btn_get_started">Эхлэх</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ HOME ════════════════════════════════════════════ -->
+<div id="page-home" class="page" style="display:none!important">
+
+  <!-- Hero section -->
+  <div style="background:linear-gradient(135deg,#2C1400 0%,#8B4513 55%,#B87333 100%);border-radius:20px;padding:48px 48px 44px;margin-bottom:32px;position:relative;overflow:hidden;color:#fff;box-shadow:0 8px 32px rgba(21,128,61,.4),0 2px 8px rgba(0,0,0,.15)">
+    <div class="hero-orb" style="position:absolute;right:-30px;top:-30px;width:260px;height:260px;background:radial-gradient(circle,rgba(255,255,255,.18) 0%,transparent 70%);pointer-events:none"></div>
+    <div class="feat-chips" style="margin-bottom:20px;margin-top:0">
+      <span class="chip" style="background:rgba(255,255,255,.15);color:#fff"><svg class="icon-sm"><use href="#i-users"/></svg><span data-i18n="feat_face">Нүүр таних</span></span>
+      <span class="chip" style="background:rgba(255,255,255,.15);color:#fff"><svg class="icon-sm"><use href="#i-eye"/></svg><span data-i18n="feat_att">Анхаарлын хяналт</span></span>
+      <span class="chip" style="background:rgba(255,255,255,.15);color:#fff"><svg class="icon-sm"><use href="#i-grad"/></svg><span data-i18n="feat_exam">Шалгалтын аюулгүй байдал</span></span>
+      <span class="chip" style="background:rgba(255,255,255,.15);color:#fff"><svg class="icon-sm"><use href="#i-trend"/></svg><span data-i18n="feat_rt">Бодит цагийн шинжилгээ</span></span>
+      <span class="chip" style="background:rgba(255,255,255,.15);color:#fff"><svg class="icon-sm"><use href="#i-bell"/></svg><span data-i18n="feat_alert">Шуурхай мэдэгдэл</span></span>
+      <span class="chip" style="background:rgba(255,255,255,.15);color:#fff"><svg class="icon-sm"><use href="#i-phone"/></svg><span data-i18n="feat_phone">Утасны илрүүлэлт</span></span>
+    </div>
+    <!-- Logo badge -->
+    <div style="display:inline-flex;align-items:center;gap:9px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:6px 16px 6px 8px;margin-bottom:18px;backdrop-filter:blur(6px)">
+      <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 100 100" style="flex-shrink:0;border-radius:7px">
+        <rect x="8" y="8" width="84" height="84" rx="16" fill="#F0F8FF"/>
+        <rect x="8" y="8" width="84" height="84" rx="16" fill="none" stroke="#00B37A" stroke-width="1.5"/>
+        <rect x="22" y="28" width="56" height="36" rx="6" fill="none" stroke="#00B37A" stroke-width="2.5"/>
+        <circle cx="50" cy="46" r="8" fill="#00B37A"/>
+        <circle cx="50" cy="46" r="3.5" fill="#F0F8FF"/>
+        <rect x="30" y="68" width="40" height="4" rx="2" fill="#00B37A" opacity=".35"/>
+        <rect x="36" y="75" width="28" height="3" rx="1.5" fill="#00B37A" opacity=".2"/>
+        <circle cx="22" cy="28" r="3" fill="#00B37A"/>
+        <circle cx="78" cy="28" r="3" fill="#00B37A"/>
+        <circle cx="22" cy="64" r="3" fill="#00B37A"/>
+        <circle cx="78" cy="64" r="3" fill="#00B37A"/>
+      </svg>
+      <span style="font-size:.88rem;font-weight:700;color:#fff;letter-spacing:-.01em">Mergen <span style="color:#F0C27F">AI</span></span>
+      <span style="font-size:.72rem;color:rgba(255,255,255,.6);font-weight:500;border-left:1px solid rgba(255,255,255,.25);padding-left:10px">AI Classroom Monitor</span>
+    </div>
+    <h1 style="font-size:2.5rem;font-weight:800;letter-spacing:-.04em;line-height:1.15;margin-bottom:12px;max-width:560px;color:#fff" data-i18n="home_h1">Mergen AI</h1>
+    <p style="font-size:1.05rem;color:rgba(255,255,255,.82);max-width:540px;line-height:1.65;font-weight:400;margin-bottom:32px" data-i18n="home_sub">AI-д суурилсан ирц бүртгэл, анхаарлын хяналт, шалгалтын аюулгүй байдлын платформ</p>
+    <!-- Primary CTAs -->
+    <div class="flex gap12" style="flex-wrap:wrap">
+      <a href="/enroll" onclick="go(event,'/enroll')">
+        <button style="padding:13px 26px;font-size:1rem;background:#fff;color:#15803D;border:none;border-radius:10px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:all .15s;font-family:inherit"
+                onmouseover="this.style.background='#F0FDF4'" onmouseout="this.style.background='#fff'">
+          <svg class="icon-lg"><use href="#i-user-plus"/></svg>
+          <span data-i18n="btn_new_student">Шинэ оюутан бүртгэх</span>
+        </button>
+      </a>
+      <a href="/monitor" onclick="go(event,'/monitor')">
+        <button style="padding:13px 26px;font-size:1rem;background:rgba(255,255,255,.15);color:#fff;border:2px solid rgba(255,255,255,.5);border-radius:10px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:all .15s;font-family:inherit"
+                onmouseover="this.style.background='rgba(255,255,255,.25)'" onmouseout="this.style.background='rgba(255,255,255,.15)'">
+          <svg class="icon-lg"><use href="#i-camera"/></svg>
+          <span data-i18n="btn_live_mon">Хяналт эхлэх</span>
+        </button>
+      </a>
+    </div>
+  </div>
+
+  <!-- Role dashboard cards -->
+  <div class="role-cards mb24">
+    <a class="role-card" href="/monitor" onclick="go(event,'/monitor')">
+      <div class="role-card-icon"><div class="icon-box icon-box-role"><svg class="icon-2xl"><use href="#i-camera"/></svg></div></div>
+      <h3 data-i18n="nav_monitor">Камерын хяналт</h3>
+      <p data-i18n="rc_teacher_p">Бүх оюутны анхаарлын оноо, шалгалтын мэдэгдэл, бүртгэлийг бодит цагаар харна.</p>
+      <div class="arrow"><span data-i18n="rc_open">Нээх</span><svg class="icon-sm"><use href="#i-arrow-right"/></svg></div>
+    </a>
+    <a class="role-card" href="/monitor" onclick="go(event,'/monitor')">
+      <div class="role-card-icon"><div class="icon-box icon-box-role"><svg class="icon-2xl"><use href="#i-shield"/></svg></div></div>
+      <h3 data-i18n="rc_admin_h">Удирдлагын самбар</h3>
+      <p data-i18n="rc_admin_p">Сургуулийн нийт статистик: ирцийн хувь, анхаарал, мэдэгдлийн тойм.</p>
+      <div class="arrow"><span data-i18n="rc_admin_btn">Тойм харах</span><svg class="icon-sm"><use href="#i-arrow-right"/></svg></div>
+    </a>
+  </div>
+
+  <!-- About Us section -->
+  <div style="background:var(--surface);border:1px solid rgba(255,255,255,.8);border-radius:20px;padding:40px 40px 36px;box-shadow:var(--shadow-md)">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+      <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 100 100" style="flex-shrink:0;border-radius:9px;box-shadow:0 2px 8px rgba(21,128,61,.18)">
+        <rect x="8" y="8" width="84" height="84" rx="16" fill="#F0F8FF"/>
+        <rect x="8" y="8" width="84" height="84" rx="16" fill="none" stroke="#00B37A" stroke-width="1.5"/>
+        <rect x="22" y="28" width="56" height="36" rx="6" fill="none" stroke="#00B37A" stroke-width="2.5"/>
+        <circle cx="50" cy="46" r="8" fill="#00B37A"/>
+        <circle cx="50" cy="46" r="3.5" fill="#F0F8FF"/>
+        <rect x="30" y="68" width="40" height="4" rx="2" fill="#00B37A" opacity=".35"/>
+        <rect x="36" y="75" width="28" height="3" rx="1.5" fill="#00B37A" opacity=".2"/>
+        <circle cx="22" cy="28" r="3" fill="#00B37A"/>
+        <circle cx="78" cy="28" r="3" fill="#00B37A"/>
+        <circle cx="22" cy="64" r="3" fill="#00B37A"/>
+        <circle cx="78" cy="64" r="3" fill="#00B37A"/>
+      </svg>
+      <div>
+        <h2 style="font-size:1.35rem;font-weight:800;letter-spacing:-.02em" data-i18n="about_h">Бидний тухай</h2>
+        <div style="font-size:.75rem;font-weight:600;color:var(--accent);letter-spacing:.04em;text-transform:uppercase">Mergen AI</div>
+      </div>
+    </div>
+    <p style="color:var(--muted);margin-bottom:28px;font-size:.92rem" data-i18n="about_sub">Mergen AI гэж юу вэ? Яагаад Монголын сургуулиудад зайлшгүй шаардлагатай вэ?</p>
+
+    <div class="g2" style="gap:24px;margin-bottom:28px">
+      <div>
+        <p style="font-size:.95rem;line-height:1.75;color:var(--text);margin-bottom:16px" data-i18n="about_p1">
+          Mergen AI нь камерын дүрс боловсруулалт болон хиймэл оюун ухааныг ашиглан ангийн үйл ажиллагааг бодит цагаар ажиглаж, багш болон эцэг эхэд мэдээлэл өгдөг систем юм.
+        </p>
+        <!-- Capabilities list -->
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px;font-size:.88rem">
+            <div style="width:28px;height:28px;border-radius:7px;background:var(--accent-lt);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg class="icon-sm"><use href="#i-check"/></svg></div>
+            <span data-i18n="cap1">Нүүр таних технологиор ирцийг автоматаар бүртгэнэ</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;font-size:.88rem">
+            <div style="width:28px;height:28px;border-radius:7px;background:var(--accent-lt);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg class="icon-sm"><use href="#i-check"/></svg></div>
+            <span data-i18n="cap2">Оюутны анхааралыг хэмжиж, бодит цагийн оноо гаргана</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;font-size:.88rem">
+            <div style="width:28px;height:28px;border-radius:7px;background:var(--accent-lt);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg class="icon-sm"><use href="#i-check"/></svg></div>
+            <span data-i18n="cap3">Шалгалтын горимд утас хэрэглэлт болон сэжигтэй хөдөлгөөнийг илрүүлнэ</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;font-size:.88rem">
+            <div style="width:28px;height:28px;border-radius:7px;background:var(--accent-lt);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg class="icon-sm"><use href="#i-check"/></svg></div>
+            <span data-i18n="cap4">Багш, эцэг эх, удирдлагад тус тусдаа самбар, мэдэгдэл</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;font-size:.88rem">
+            <div style="width:28px;height:28px;border-radius:7px;background:var(--accent-lt);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg class="icon-sm"><use href="#i-check"/></svg></div>
+            <span data-i18n="cap5">Интернэтгүйгээр ажиллах боломжтой (Edge AI)</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="background:#FFF5F5;border:1px solid #FECACA;border-radius:12px;padding:16px 18px;display:flex;gap:14px;align-items:flex-start">
+          <div style="width:36px;height:36px;border-radius:9px;background:#FEE2E2;color:var(--danger);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg class="icon-sm"><use href="#i-clock"/></svg></div>
+          <div><div style="font-weight:700;font-size:.9rem;margin-bottom:3px" data-i18n="prob1_h">Цагийн алдагдал</div><div class="text-muted text-sm" data-i18n="prob1_p">Гар ирц бүртгэл 10–15 мин/цаг зарцуулдаг → жилдээ 200+ цаг алддаг</div></div>
+        </div>
+        <div style="background:#FFFBF0;border:1px solid #FDE68A;border-radius:12px;padding:16px 18px;display:flex;gap:14px;align-items:flex-start">
+          <div style="width:36px;height:36px;border-radius:9px;background:#FEF3C7;color:var(--warning);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg class="icon-sm"><use href="#i-alert"/></svg></div>
+          <div><div style="font-weight:700;font-size:.9rem;margin-bottom:3px" data-i18n="prob2_h">Шалгалтын хуурамч байдал</div><div class="text-muted text-sm" data-i18n="prob2_p">Азийн дунд сургуулийн 60%+ оюутан шалгалтын аль нэг хэлбэрийн залилан хийсэн гэж хүлээн зөвшөөрдөг</div></div>
+        </div>
+        <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:16px 18px;display:flex;gap:14px;align-items:flex-start">
+          <div style="width:36px;height:36px;border-radius:9px;background:#DCFCE7;color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg class="icon-sm"><use href="#i-eye"/></svg></div>
+          <div><div style="font-weight:700;font-size:.9rem;margin-bottom:3px" data-i18n="prob3_h">Анхаарлын хяналтгүй байдал</div><div class="text-muted text-sm" data-i18n="prob3_p">Багш нар 30+ оюутны анхааралыг нэгэн зэрэг хэмждэг объектив хэрэгсэлгүй</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Market stats row -->
+    <div style="background:linear-gradient(135deg,#2C1400,#8B4513);border-radius:14px;padding:24px 28px;color:#fff">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.7)" data-i18n="market_title">Зах зээлийн боломж</div>
+        <div style="display:flex;align-items:center;gap:7px;background:rgba(255,255,255,.12);border-radius:999px;padding:4px 12px 4px 7px">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 100 100" style="flex-shrink:0;border-radius:5px">
+            <rect x="8" y="8" width="84" height="84" rx="16" fill="#F0F8FF"/>
+            <rect x="8" y="8" width="84" height="84" rx="16" fill="none" stroke="#00B37A" stroke-width="1.5"/>
+            <rect x="22" y="28" width="56" height="36" rx="6" fill="none" stroke="#00B37A" stroke-width="2.5"/>
+            <circle cx="50" cy="46" r="8" fill="#00B37A"/>
+            <circle cx="50" cy="46" r="3.5" fill="#F0F8FF"/>
+            <rect x="30" y="68" width="40" height="4" rx="2" fill="#00B37A" opacity=".35"/>
+            <circle cx="22" cy="28" r="3" fill="#00B37A"/>
+            <circle cx="78" cy="28" r="3" fill="#00B37A"/>
+            <circle cx="22" cy="64" r="3" fill="#00B37A"/>
+            <circle cx="78" cy="64" r="3" fill="#00B37A"/>
+          </svg>
+          <span style="font-size:.75rem;font-weight:700;color:#fff;letter-spacing:-.01em">Mergen <span style="color:#F0C27F">AI</span></span>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px">
+        <div style="text-align:center">
+          <div style="font-size:1.9rem;font-weight:800;color:#fff;letter-spacing:-.03em">600+</div>
+          <div class="text-sm" style="color:rgba(255,255,255,.75);font-weight:600;margin-top:2px" data-i18n="mstat1">Монгол дахь хувийн сургууль</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:1.9rem;font-weight:800;color:#fff;letter-spacing:-.03em">12%</div>
+          <div class="text-sm" style="color:rgba(255,255,255,.75);font-weight:600;margin-top:2px" data-i18n="mstat2">Жилийн өсөлт</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:1.9rem;font-weight:800;color:#fff;letter-spacing:-.03em">$12.4B</div>
+          <div class="text-sm" style="color:rgba(255,255,255,.75);font-weight:600;margin-top:2px" data-i18n="mstat3">Дэлхийн EdTech AI зах (2030)</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:1.9rem;font-weight:800;color:#fff;letter-spacing:-.03em">22%</div>
+          <div class="text-sm" style="color:rgba(255,255,255,.75);font-weight:600;margin-top:2px" data-i18n="mstat4">CAGR өсөлтийн хурд</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ ENROLL ══════════════════════════════════════════ -->
+<div id="page-enroll" class="page">
+  <div class="page-header">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="icon-box icon-box-sm"><svg class="icon-lg"><use href="#i-user-plus"/></svg></div>
+      <div>
+        <h1 data-i18n="enroll_h1">Оюутан бүртгэх</h1>
+        <p class="page-header" style="margin:0;font-size:.85rem;color:var(--muted)" data-i18n="enroll_sub">3 өнцгөөс зураг авч нүүрийг бүртгэнэ</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="enroll-grid">
+
+    <!-- ── Left: capture area ── -->
+    <div>
+      <div class="enroll-tabs">
+        <div class="enroll-tab active" id="tab-cam" onclick="switchEnrollTab('cam')">
+          <svg class="icon-sm"><use href="#i-camera"/></svg><span>Камераас авах</span>
+        </div>
+        <div class="enroll-tab" id="tab-file" onclick="switchEnrollTab('file')">
+          <svg class="icon-sm"><use href="#i-clip"/></svg><span>Файл оруулах</span>
+        </div>
+      </div>
+
+      <!-- Camera panel -->
+      <div class="enroll-panel active" id="panel-cam">
+        <div class="cam-box" id="camBox">
+          <div class="cam-placeholder" id="camPH">
+            <div class="cam-ph-icon"><svg class="icon-xl"><use href="#i-camera"/></svg></div>
+            <span class="cam-ph-title" data-i18n="cam_preview">Камерын урьдчилан харах</span>
+            <span class="cam-ph-hint" data-i18n="cam_hint">"Камер нээх" дарна уу</span>
+          </div>
+          <video id="enrollVideo" autoplay playsinline></video>
+        </div>
+        <canvas id="captureCanvas" width="640" height="480" style="display:none"></canvas>
+        <div class="flex gap8" style="margin-top:14px">
+          <button class="btn btn-secondary" id="btnStartCam" onclick="startEnrollCam()">
+            <svg class="icon"><use href="#i-camera"/></svg><span data-i18n="btn_start_cam">Камер нээх</span>
+          </button>
+          <button class="btn btn-primary" id="btnCapture" onclick="capturePhoto()" disabled>
+            <svg class="icon"><use href="#i-camera"/></svg><span data-i18n="btn_capture">Зураг авах</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- File upload panel -->
+      <div class="enroll-panel" id="panel-file">
+        <div class="upload-slots">
+          <div class="upload-slot">
+            <div class="upload-label">Урд тал</div>
+            <div class="upload-box" id="prevBox0" onclick="document.getElementById('imgFile0').click()">
+              <div class="upload-ph" id="prev0"><svg class="icon-xl"><use href="#i-camera"/></svg><span>Зураг сонгох</span></div>
+            </div>
+            <input type="file" id="imgFile0" accept="image/*" style="display:none" onchange="previewFile(0)">
+          </div>
+          <div class="upload-slot">
+            <div class="upload-label">Зүүн тал</div>
+            <div class="upload-box" id="prevBox1" onclick="document.getElementById('imgFile1').click()">
+              <div class="upload-ph" id="prev1"><svg class="icon-xl"><use href="#i-camera"/></svg><span>Зураг сонгох</span></div>
+            </div>
+            <input type="file" id="imgFile1" accept="image/*" style="display:none" onchange="previewFile(1)">
+          </div>
+          <div class="upload-slot">
+            <div class="upload-label">Баруун тал</div>
+            <div class="upload-box" id="prevBox2" onclick="document.getElementById('imgFile2').click()">
+              <div class="upload-ph" id="prev2"><svg class="icon-xl"><use href="#i-camera"/></svg><span>Зураг сонгох</span></div>
+            </div>
+            <input type="file" id="imgFile2" accept="image/*" style="display:none" onchange="previewFile(2)">
+          </div>
+        </div>
+      </div>
+
+      <!-- Progress dots -->
+      <div class="capture-dots" id="capDots">
+        <div class="cdot active" id="cd0">1</div>
+        <div class="cdot"        id="cd1">2</div>
+        <div class="cdot"        id="cd2">3</div>
+        <span style="font-size:.8rem;color:var(--muted);font-weight:500">3 өнцгөөс зураг авна уу</span>
+      </div>
+    </div>
+
+    <!-- ── Right: form ── -->
+    <div class="enroll-form-card">
+      <div class="enroll-form-head">
+        <h3 data-i18n="student_info">Оюутны мэдээлэл</h3>
+        <p data-i18n="enroll_form_sub">Мэдээллийг бөглөж бүртгэнэ үү</p>
+      </div>
+      <div class="enroll-form-body">
+        <div class="enroll-field">
+          <label data-i18n="label_name">Бүтэн нэр</label>
+          <input id="enrollName" class="form-control" type="text" data-i18n-placeholder="ph_name" placeholder="Жнь: Тэнүүн Гантулга">
+        </div>
+        <div class="enroll-field">
+          <label data-i18n="label_class">Анги</label>
+          <input id="enrollClass" class="form-control" type="text" data-i18n-placeholder="ph_class" placeholder="Жнь: 10А" value="10А">
+        </div>
+        <div class="enroll-field">
+          <label data-i18n="label_role">Үүрэг</label>
+          <select id="enrollRole" class="form-control">
+            <option value="student" data-i18n-opt="role_student">Оюутан</option>
+            <option value="teacher" data-i18n-opt="role_teacher_opt">Багш</option>
+          </select>
+        </div>
+        <div class="enroll-divider"></div>
+        <button class="btn-enroll-submit" id="btnEnroll" onclick="submitEnroll()" disabled>
+          <svg class="icon"><use href="#i-check"/></svg>
+          <span data-i18n="btn_enroll">Бүртгэх</span>
+        </button>
+        <div id="enrollResult" style="font-size:.82rem;min-height:20px"></div>
+      </div>
+      <div class="enroll-test-section">
+        <div class="enroll-test-label">Танилт шалгах</div>
+        <label class="btn btn-secondary" style="width:100%;justify-content:center;cursor:pointer">
+          <svg class="icon"><use href="#i-eye"/></svg>
+          <span>Зураг байршуулж шалгах</span>
+          <input type="file" id="testRecogFile" accept="image/*" style="display:none" onchange="testRecognition()">
+        </label>
+        <div id="testRecogResult" style="margin-top:8px;font-size:.8rem;line-height:1.6;color:var(--muted)"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════ MONITOR ═════════════════════════════════════════ -->
+<div id="page-monitor" class="page">
+  <div class="page-header-row page-header">
+    <div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="icon-box icon-box-sm"><svg class="icon-lg"><use href="#i-camera"/></svg></div>
+        <h1 data-i18n="monitor_h1">Камерын хяналт</h1>
+      </div>
+      <p data-i18n="monitor_sub">Нүүр илрүүлэлт · Анхаарлын хяналт · Шалгалтын аюулгүй байдал</p>
+    </div>
+    <div class="flex gap8 items-center">
+      <span class="cam-pill" id="camPill"><span class="cam-pill-dot"></span><span data-i18n="cam_off">Унтарсан</span></span>
+      <button class="btn btn-success" id="btnStartMon" onclick="startMonCam()">
+        <svg class="icon"><use href="#i-play"/></svg><span data-i18n="btn_start_mon">Камер эхлүүлэх</span>
+      </button>
+      <button class="btn btn-secondary" id="btnVideoFile" onclick="document.getElementById('videoFileInput').click()">
+        <svg class="icon"><use href="#i-video"/></svg><span>Видео файл</span>
+      </button>
+      <input type="file" id="videoFileInput" accept="video/*" style="display:none" onchange="uploadVideoFile()">
+      <button class="btn btn-secondary" id="btnStopMon" onclick="stopMonCam()" style="display:none">
+        <svg class="icon"><use href="#i-stop"/></svg><span data-i18n="btn_stop">Зогсоох</span>
+      </button>
+      <button class="btn btn-secondary" id="btnUnlock" onclick="unlockPerson()" style="display:none;background:#ECFEFF;color:#0891B2;border:1px solid #A5F3FC">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+        <span>Суллах</span>
+      </button>
+    </div>
+  </div>
+
+  <p class="text-muted mb16 text-sm" data-i18n="monitor_tip">
+    Зөвлөгөө: Шалгалтын горимд YOLOv8 утас илрүүлдэг. Видео файл оруулж тест хийх боломжтой.
+  </p>
+  <div class="upload-progress-wrap" id="videoUploadProgress">
+    <div class="upload-progress-bar-bg">
+      <div class="upload-progress-bar" id="videoProgressBar"></div>
+    </div>
+    <div class="upload-progress-label">
+      <span id="videoProgressFile" style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:160px"></span>
+      <span id="videoProgressPct">0%</span>
+    </div>
+  </div>
+
+  <div class="monitor-grid">
+    <img id="videoStream" src="" alt="Live feed" style="background:#000;min-height:200px;cursor:crosshair" title="Хүнийг lock хийхийн тулд дарна уу" onclick="lockPerson(event)">
+    <div>
+      <div class="card mb16">
+        <div class="card-title" data-i18n="detected_faces">Илрүүлсэн нүүрнүүд</div>
+        <div id="facePanel"><p class="text-muted text-sm" data-i18n="no_faces">Нүүр илрүүлэгдээгүй</p></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div class="card-title" style="margin-bottom:0" data-i18n="recent_alerts">Сүүлийн мэдэгдэл</div>
+          <button class="btn btn-sm" style="background:#FEE2E2;color:var(--danger);border:1px solid #FECACA;padding:3px 9px;font-size:.75rem"
+                  onclick="clearAlertLog('monAlertLog')">
+            <svg class="icon-sm"><use href="#i-refresh"/></svg>
+            <span data-i18n="btn_clear_log">Лог арилгах</span>
+          </button>
+        </div>
+        <div class="notif-list" id="monAlertLog">
+          <p class="text-muted text-sm" data-i18n="no_alerts">Мэдэгдэл байхгүй</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════ ADMIN DASHBOARD ════════════════════════════════ -->
+
+<!-- ═══════════════════ TEACHER DASHBOARD ═══════════════════════════════ -->
+<div id="page-teacher" class="page">
+  <div class="page-header-row page-header">
+    <div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="icon-box icon-box-sm"><svg class="icon-lg"><use href="#i-grad"/></svg></div>
+        <h1 data-i18n="teacher_h1">Багшийн самбар</h1>
+      </div>
+      <p id="teacherDate" style="color:var(--muted);font-size:.9rem"></p>
+    </div>
+  </div>
+
+  <div class="g5 mb20">
+    <div class="card stat-card">
+      <div class="stat-val" id="tPresent" style="color:var(--success)">—</div>
+      <div class="stat-label" data-i18n="stat_present">Ирсэн</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-val" id="tAbsent" style="color:var(--danger)">—</div>
+      <div class="stat-label" data-i18n="stat_absent">Ирээгүй</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-val" id="tAtten" style="color:var(--accent)">—</div>
+      <div class="stat-label" data-i18n="stat_avg_att">Дундаж анхаарал</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-val" id="tAlerts" style="color:var(--danger)">—</div>
+      <div class="stat-label" data-i18n="stat_alerts">Мэдэгдэл</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-val" id="tUniform" style="color:var(--success)">—</div>
+      <div class="stat-label" data-i18n="uniform_rate">Дүрэмт хувцас</div>
+    </div>
+  </div>
+
+  <div class="g2 mb20">
+    <div class="card">
+      <div class="card-title" data-i18n="today_att">Өнөөдрийн ирц</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th data-i18n="col_name">Нэр</th>
+              <th data-i18n="col_arrived">Ирсэн цаг</th>
+              <th data-i18n="col_att">Анхаарал</th>
+              <th data-i18n="col_alerts">Мэдэгдэл</th>
+              <th data-i18n="col_status">Төлөв</th>
+              <th data-i18n="col_uniform">Дүрэмт хувцас</th>
+            </tr>
+          </thead>
+          <tbody id="attTable"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title" data-i18n="chart_title">Ангийн анхаарал цагаар</div>
+      <canvas id="attChart" height="190"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="flex justify-between items-center mb16">
+      <div class="card-title" style="margin-bottom:0" data-i18n="notif_log">Мэдэгдлийн бүртгэл</div>
+      <button class="btn btn-sm" style="background:#FEE2E2;color:var(--danger);border:1px solid #FECACA;padding:3px 9px;font-size:.75rem"
+              onclick="clearAlertLog('teacherNotifLog')">
+        <svg class="icon-sm"><use href="#i-refresh"/></svg>
+        <span data-i18n="btn_clear_log">Лог арилгах</span>
+      </button>
+    </div>
+    <div class="notif-list" id="teacherNotifLog">
+      <p class="text-muted text-sm" data-i18n="no_alerts">Мэдэгдэл байхгүй</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ PARENT DASHBOARD ════════════════════════════════ -->
+<div id="page-parent" class="page">
+  <div class="page-header page-header-row">
+    <div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="icon-box icon-box-sm"><svg class="icon-lg"><use href="#i-users"/></svg></div>
+        <h1 data-i18n="parent_h1">Эцэг эхийн самбар</h1>
+      </div>
+      <p data-i18n="parent_sub">Хүүхдийнхээ ирц, анхаарлын тойм</p>
+    </div>
+  </div>
+  <div class="g2 mb16" style="max-width:720px">
+    <div class="card">
+      <div class="card-title" data-i18n="student_lbl">Оюутан</div>
+      <div class="student-hero">
+        <div class="student-avatar"><div class="icon-box icon-box-lg"><svg class="icon-xl"><use href="#i-users"/></svg></div></div>
+        <div>
+          <div id="pName" style="font-size:1.5rem;font-weight:800;letter-spacing:-.02em">—</div>
+          <div id="pClass" class="text-muted text-sm"></div>
+          <div id="pStatus" style="margin-top:6px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
+      <div class="card-title" data-i18n="att_score">Анхаарлын оноо</div>
+      <div class="ring-wrap">
+        <div class="ring-val" id="pAttVal" style="color:var(--accent)">—</div>
+        <div class="ring-sub" data-i18n="att_score">Анхаарал</div>
+      </div>
+      <div id="pAttBar" style="width:100%;margin-top:8px"></div>
+    </div>
+  </div>
+  <div class="card" style="max-width:720px">
+    <div class="card-title" data-i18n="today_summary">Өнөөдрийн тойм</div>
+    <div id="pSummary" class="text-muted text-sm" data-i18n="loading">Уншиж байна…</div>
+  </div>
+  <div class="card" style="max-width:720px;margin-top:16px">
+    <div class="card-title" data-i18n="uniform_h">Дүрэмт хувцас</div>
+    <div id="pUniform" class="text-muted text-sm" data-i18n="loading">Уншиж байна…</div>
+  </div>
+  <div class="card" style="max-width:720px;margin-top:16px">
+    <div class="card-title" data-i18n="yesterday_att">Өчигдрийн ирц</div>
+    <div id="pYesterday" class="text-muted text-sm" data-i18n="loading">Уншиж байна…</div>
+  </div>
+  <div class="card" style="max-width:720px;margin-top:16px">
+    <div class="card-title" data-i18n="att_history">Ирцийн түүх</div>
+    <div id="pHistory" class="text-muted text-sm" data-i18n="loading">Уншиж байна…</div>
+  </div>
+</div>
+
+<!-- ═══════════════════ STUDENTS PAGE ══════════════════════════════════ -->
+<div id="page-students" class="page">
+  <div class="page-header-row page-header">
+    <div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="icon-box icon-box-sm"><svg class="icon-lg"><use href="#i-users"/></svg></div>
+        <h1 data-i18n="students_h1">Оюутны бүртгэл</h1>
+      </div>
+      <p data-i18n="students_sub">Бүртгэлтэй оюутнуудын жагсаалт, нүүрний мэдээлэл, удирдлага</p>
+    </div>
+    <a href="/enroll" onclick="go(event,'/enroll')">
+      <button class="btn btn-primary">
+        <svg class="icon"><use href="#i-user-plus"/></svg>
+        <span data-i18n="btn_new_student">Шинэ оюутан бүртгэх</span>
+      </button>
+    </a>
+  </div>
+
+  <!-- Summary pills -->
+  <div class="flex gap12 mb20" id="stuSummary" style="flex-wrap:wrap"></div>
+
+  <!-- Search / filter bar -->
+  <div class="flex gap8 mb20 items-center">
+    <div style="position:relative;flex:1;max-width:320px">
+      <svg class="icon" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted)"><use href="#i-search"/></svg>
+      <input id="stuSearch" class="form-control" style="padding-left:36px" type="text"
+             data-i18n-placeholder="stu_search_ph" placeholder="Нэрээр хайх…"
+             oninput="filterStudents()">
+    </div>
+    <select id="stuRoleFilter" class="form-control" style="width:150px" onchange="filterStudents()">
+      <option value=""  data-i18n-opt="filter_all">Бүгд</option>
+      <option value="student" data-i18n-opt="role_student">Оюутан</option>
+      <option value="teacher" data-i18n-opt="role_teacher_opt">Багш</option>
+    </select>
+    <select id="stuFaceFilter" class="form-control" style="width:180px" onchange="filterStudents()">
+      <option value=""  data-i18n-opt="filter_all">Бүгд</option>
+      <option value="1" data-i18n-opt="filter_has_face">Нүүр бүртгэлтэй</option>
+      <option value="0" data-i18n-opt="filter_no_face">Нүүр бүртгэлгүй</option>
+    </select>
+  </div>
+
+  <div class="card">
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:40px">#</th>
+            <th data-i18n="col_name">Нэр</th>
+            <th data-i18n="col_class">Анги</th>
+            <th data-i18n="label_role">Үүрэг</th>
+            <th data-i18n="stu_face_col">Нүүрний бүртгэл</th>
+            <th data-i18n="col_status">Өнөөдрийн байдал</th>
+            <th data-i18n="col_att">Анхаарал</th>
+            <th data-i18n="stu_registered">Бүртгэгдсэн</th>
+            <th style="text-align:right" data-i18n="stu_actions">Үйлдэл</th>
+          </tr>
+        </thead>
+        <tbody id="stuTbody">
+          <tr><td colspan="9" class="text-muted" style="text-align:center;padding:28px" data-i18n="loading">Уншиж байна…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Delete confirmation modal -->
+  <div id="deleteModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,80,.25);backdrop-filter:blur(3px);z-index:500;align-items:center;justify-content:center">
+    <div class="card" style="width:400px;box-shadow:var(--shadow-md)">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <div style="width:42px;height:42px;border-radius:10px;background:#FEE2E2;color:var(--danger);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg class="icon"><use href="#i-alert"/></svg>
+        </div>
+        <div>
+          <div style="font-weight:700;font-size:1rem" data-i18n="del_confirm_title">Оюутан устгах уу?</div>
+          <div class="text-muted text-sm" data-i18n="del_confirm_sub">Энэ үйлдлийг буцаах боломжгүй</div>
+        </div>
+      </div>
+      <p class="text-sm" style="margin-bottom:20px;color:var(--text)">
+        <span data-i18n="del_warn">Оюутны бүх ирц, анхаарлын бүртгэл, мэдэгдэл устгагдана.</span>
+        <br><br>
+        <strong id="delStudentName" style="color:var(--danger)"></strong>
+      </p>
+      <div class="flex gap8" style="justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="closeDeleteModal()" data-i18n="btn_cancel">Болих</button>
+        <button class="btn btn-danger"    onclick="confirmDelete()"    data-i18n="btn_delete">Устгах</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+
+# Model weights
+*.pt
+*.task
+
+# Uploads / photos
+uploads/
+photos/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Claude Code
+.claude/
