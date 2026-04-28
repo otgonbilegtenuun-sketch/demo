@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 python run.py
 ```
 
-Starts the FastAPI server at **http://localhost:8080** with uvicorn auto-reload. The entry point runs `backend/app.py` as `app:app` with `app_dir="backend"`.
+Starts the FastAPI server at **http://localhost:8080** with uvicorn auto-reload. The root entry point runs `apps/edge-agent/backend/app.py` as `app:app`.
 
 ## Installing dependencies
 
@@ -49,7 +49,25 @@ Implemented features:
 - Bullying/incident heuristics: close pair, proximity cluster, sudden motion, distress face, optional pose cues.
 - Safety heuristics: fall/collapse posture, running/fast movement, restricted-zone entry, after-hours presence, unattended bag-like object, weapon-like object, camera blocked/dark/blurry/stream failure.
 - Admin settings at `/admin`: detector flags, retention, restricted-zone JSON, school hours, per-student opt-out profiles, threshold review summary.
-- Eval workflow at `/eval`: record clips, label clips, run `eval/run_eval.py`, and view precision/recall/FPR.
+- Eval workflow at `/eval`: record clips, label clips, run `apps/edge-agent/eval/run_eval.py`, and view precision/recall/FPR.
+
+## Repository structure
+
+```text
+apps/
+  edge-agent/       current Python/FastAPI school-local camera AI app
+  cloud-api/        future cloud metadata API
+  web-dashboard/    future Next.js/React cloud dashboard
+  mobile-app/       future mobile client
+packages/
+  shared-types/     future shared API contracts
+  shared-ui/        future shared dashboard UI package
+infra/              future deployment/Docker/service files
+docs/               architecture, hardware, and versioning notes
+scripts/            future maintenance scripts
+```
+
+The current working product is `apps/edge-agent`. The root `run.py` exists as a convenience wrapper so `python run.py` still works from the repository root.
 
 ## Hardware targets
 
@@ -114,18 +132,18 @@ For production:
 - Validate before pushing:
 
 ```bash
-python -c "import ast; files=['backend/app.py','backend/camera.py','backend/database.py','backend/bullying_detector.py','backend/pose_analyzer.py','backend/safety_detector.py','eval/run_eval.py']; [ast.parse(open(f, encoding='utf-8').read()) for f in files]; print('py OK')"
-node -e "new Function(require('fs').readFileSync('frontend/app.js','utf8')); console.log('js OK')"
-python eval/run_eval.py
+python -c "import ast; files=['apps/edge-agent/backend/app.py','apps/edge-agent/backend/camera.py','apps/edge-agent/backend/database.py','apps/edge-agent/backend/bullying_detector.py','apps/edge-agent/backend/pose_analyzer.py','apps/edge-agent/backend/safety_detector.py','apps/edge-agent/eval/run_eval.py']; [ast.parse(open(f, encoding='utf-8').read()) for f in files]; print('py OK')"
+node -e "new Function(require('fs').readFileSync('apps/edge-agent/frontend/app.js','utf8')); console.log('js OK')"
+python apps/edge-agent/eval/run_eval.py
 ```
 
 ## Architecture
 
-This is a **single-page application** where all page routes (`/`, `/monitor`, `/dashboard/teacher`, etc.) return the same `frontend/index.html`. Client-side routing is handled in `frontend/app.js` via `history.pushState`. All backend endpoints are prefixed `/api/`.
+The current edge agent is a **single-page application** where all page routes (`/`, `/monitor`, `/dashboard/teacher`, etc.) return the same `apps/edge-agent/frontend/index.html`. Client-side routing is handled in `apps/edge-agent/frontend/app.js` via `history.pushState`. All backend endpoints are prefixed `/api/`.
 
-### Backend (`backend/`)
+### Backend (`apps/edge-agent/backend/`)
 
-- **`app.py`** — FastAPI app. Mounts `frontend/` as `/static` and `photos/` as `/photos`. Defines all API routes and wires camera callbacks. Auth uses a custom HMAC-signed token (7-day expiry), **not** a standard JWT library.
+- **`app.py`** — FastAPI app. Mounts `apps/edge-agent/frontend/` as `/static` and local photos/clips as static assets. Defines all API routes and wires camera callbacks. Auth uses a custom HMAC-signed token (7-day expiry), **not** a standard JWT library.
 - **`camera.py`** — `CameraProcessor` runs in a background thread. Three AI models operate at different cadences:
   - **MediaPipe Face Landmarker** (`face_landmarker.task`) — every frame; provides face bboxes and gaze (attentive/sideways) via landmark geometry
   - **DeepFace ArcFace** — every 2 seconds; generates 512-dim embeddings for recognition
@@ -133,7 +151,7 @@ This is a **single-page application** where all page routes (`/`, `/monitor`, `/
   - Callbacks (`on_recognition`, `on_unknown_face`, `on_phone_suspect`, `on_uniform`) are set by `app.py` to keep camera logic decoupled from DB writes.
 - **`database.py`** — SQLite with WAL mode. Per-thread connections via `threading.local`. Tables: `students`, `attendance`, `attention_log`, `alerts`, `uniform_log`, `users`. Face embeddings stored as raw `BLOB` (numpy `float32` bytes). Recognition uses cosine similarity with a threshold of 0.50.
 
-### Frontend (`frontend/`)
+### Frontend (`apps/edge-agent/frontend/`)
 
 - **`index.html`** — Single HTML file containing all page `<div>` elements (hidden by default) and inline SVG sprite.
 - **`app.js`** — All JS in one file (~1500 lines). Global state in object `S`. i18n dictionary `I18N` supports Mongolian (`mn`) and English (`en`). `showPage(path)` activates the correct `<div>` and calls its `init*()` function.

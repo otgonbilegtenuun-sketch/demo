@@ -2,11 +2,11 @@
 run_eval.py — score the bullying / behavior detector against labeled clips.
 
 Run from repo root:
-    python eval/run_eval.py
+    python apps/edge-agent/eval/run_eval.py
 
 Reads:
-    eval/labels.csv  (filename, truth_label)
-    eval/clips/*.mp4
+    apps/edge-agent/eval/labels.csv  (filename, truth_label)
+    apps/edge-agent/eval/clips/*.mp4
 
 Prints:
     - per-clip prediction (any incident fired? primary signal? score?)
@@ -84,7 +84,7 @@ def main():
     write_json   = "--json" in sys.argv
 
     if not os.path.exists(labels_path):
-        print("eval/labels.csv missing"); return 1
+        print("apps/edge-agent/eval/labels.csv missing"); return 1
 
     rows_in = []
     with open(labels_path) as f:
@@ -93,7 +93,7 @@ def main():
                 rows_in.append(row)
 
     if not rows_in:
-        print("No labeled clips. See eval/README.md for the workflow.")
+        print("No labeled clips. See apps/edge-agent/eval/README.md for the workflow.")
         return 0
 
     print(f"[eval] {len(rows_in)} clip(s)")

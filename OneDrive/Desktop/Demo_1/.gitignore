@@ -2,6 +2,7 @@
 *.db
 *.db-shm
 *.db-wal
+*.db.fresh
 
 # Logs
 *.log
@@ -13,6 +14,13 @@
 # Uploads / photos
 uploads/
 photos/
+clips/
+apps/edge-agent/uploads/
+apps/edge-agent/photos/
+apps/edge-agent/clips/
+apps/edge-agent/eval/clips/
+apps/edge-agent/eval/_tmp_clips/
+apps/edge-agent/eval/last_run.json
 
 # Python
 __pycache__/

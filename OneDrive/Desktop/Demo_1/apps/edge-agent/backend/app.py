@@ -1178,7 +1178,7 @@ async def eval_run():
        its own CameraProcessor per clip and uses the same webcam index."""
     runner = os.path.join(EVAL_DIR, "run_eval.py")
     if not os.path.exists(runner):
-        raise HTTPException(404, "eval/run_eval.py not found")
+        raise HTTPException(404, "edge-agent eval runner not found")
     if not _read_labels_csv():
         raise HTTPException(400, "no labeled clips — record some and assign labels first")
     # Pause the live camera for the duration of the eval
