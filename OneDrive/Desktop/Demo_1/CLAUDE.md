@@ -99,8 +99,18 @@ For production:
 
 ## Version control policy
 
+- Current product version: `v0.1 Edge Demo`.
+- Treat `main` as the working demo branch until a separate production branch exists.
+- Use semantic-ish demo versions for planning:
+  - `v0.1`: local single-camera edge demo.
+  - `v0.2`: validated thresholds from real classroom footage.
+  - `v0.3`: multi-camera edge server with `camera_id`/`classroom_id`.
+  - `v0.4`: cloud metadata sync.
+  - `v0.5`: Next.js/React cloud dashboard.
+  - `v1.0`: pilot-ready school deployment.
 - Commit source files only; do not commit `classroom.db`, generated clips, photos, uploads, model downloads, or eval video clips.
 - Use focused commits with clear messages.
+- Push only after validation passes and the user explicitly asks for push.
 - Validate before pushing:
 
 ```bash
