@@ -85,6 +85,8 @@ button:active, .btn:active { transform: scale(.96) !important; }
 .btn-danger:hover { background: #b91c1c; }
 .btn-success   { background: var(--success); color: #fff; }
 .btn-success:hover { background: #047857; }
+.btn-warning   { background: var(--warning); color: #fff; }
+.btn-warning:hover { background: #B45309; }
 .btn-sm    { padding: 5px 11px; font-size: .8rem; }
 .btn-ghost { background: #F3F4F6; color: #6B7280; border: 1px solid #E5E7EB; }
 .btn-ghost:hover { background: #E5E7EB; color: var(--text); }

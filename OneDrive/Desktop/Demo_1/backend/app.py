@@ -12,7 +12,7 @@ import hmac
 import json
 import os
 import time
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import cv2
 import numpy as np
@@ -193,6 +193,26 @@ def _on_phone_suspect(name: str):
     print(f"[ALERT] {name} phone/down-gaze detected")
 
 
+def _save_review_incident(event: dict, label: str = "INCIDENT") -> int:
+    iid = db.save_bullying_incident(
+        primary_signal     = event.get("primary_signal", "unknown"),
+        concurrent_signals = event.get("concurrent_signals", []),
+        involved_names     = event.get("involved_names", []),
+        score              = event.get("score", 0.0),
+        duration_s         = event.get("duration_s", 0.0),
+    )
+    print(f"[{label}] flag #{iid}: {event.get('primary_signal')} "
+          f"score={event.get('score')} names={event.get('involved_names')}")
+    center_ts = float(event.get("timestamp", time.time()))
+    threading.Thread(
+        target=_dump_incident_clip,
+        args=(iid, center_ts, float(event.get("clip_pre_s", 5.0)),
+              float(event.get("clip_post_s", 10.0))),
+        daemon=True,
+    ).start()
+    return iid
+
+
 def _on_bullying_incident(event: dict):
     """
     Called by the camera thread when the heuristic flagger fires.
@@ -200,30 +220,24 @@ def _on_bullying_incident(event: dict):
     it is NOT a verdict. All incidents must be reviewed by staff.
     """
     try:
-        iid = db.save_bullying_incident(
-            primary_signal     = event.get("primary_signal", "unknown"),
-            concurrent_signals = event.get("concurrent_signals", []),
-            involved_names     = event.get("involved_names", []),
-            score              = event.get("score", 0.0),
-            duration_s         = event.get("duration_s", 0.0),
-        )
-        print(f"[BULLYING] flag #{iid}: {event['primary_signal']} "
-              f"score={event['score']} names={event.get('involved_names')}")
-
-        center_ts = float(event.get("timestamp", time.time()))
-        threading.Thread(
-            target=_dump_incident_clip,
-            args=(iid, center_ts),
-            daemon=True,
-        ).start()
+        _save_review_incident(event, "BULLYING")
     except Exception as e:
         print(f"[BULLYING] save error: {e}")
 
 
-def _dump_incident_clip(incident_id: int, center_ts: float):
+def _on_safety_incident(event: dict):
+    """Safety signals are review prompts only; never automatic verdicts."""
+    try:
+        _save_review_incident(event, "SAFETY")
+    except Exception as e:
+        print(f"[SAFETY] save error: {e}")
+
+
+def _dump_incident_clip(incident_id: int, center_ts: float,
+                        pre_s: float = 5.0, post_s: float = 10.0):
     """Background: write the ring-buffer clip and update the DB row."""
     try:
-        path = camera.dump_clip(center_ts)
+        path = camera.dump_clip(center_ts, pre_s=pre_s, post_s=post_s)
         if not path:
             return
         # Rename to use the incident id so the URL is stable
@@ -248,6 +262,49 @@ camera.on_unknown_face      = _on_unknown_face
 camera.on_phone_suspect     = _on_phone_suspect
 camera.on_uniform           = _on_uniform
 camera.on_bullying_incident = _on_bullying_incident
+camera.on_safety_incident   = _on_safety_incident
+
+
+DEFAULT_SAFETY_CONFIG = {
+    "school_start": "08:00",
+    "school_end": "18:00",
+    "restricted_zones": [],
+}
+
+
+def _load_safety_config() -> dict:
+    raw = db.get_config("safety_config")
+    if not raw:
+        return dict(DEFAULT_SAFETY_CONFIG)
+    try:
+        cfg = json.loads(raw)
+    except Exception:
+        return dict(DEFAULT_SAFETY_CONFIG)
+    out = dict(DEFAULT_SAFETY_CONFIG)
+    out.update({k: v for k, v in cfg.items() if k in out})
+    if not isinstance(out.get("restricted_zones"), list):
+        out["restricted_zones"] = []
+    return out
+
+
+def _save_safety_config(config: dict) -> dict:
+    out = dict(DEFAULT_SAFETY_CONFIG)
+    out.update({k: v for k, v in (config or {}).items() if k in out})
+    zones = []
+    for z in out.get("restricted_zones", []):
+        try:
+            zones.append({
+                "name": str(z.get("name") or "restricted"),
+                "x1": int(z["x1"]), "y1": int(z["y1"]),
+                "x2": int(z["x2"]), "y2": int(z["y2"]),
+                "enabled": bool(z.get("enabled", True)),
+            })
+        except Exception:
+            continue
+    out["restricted_zones"] = zones
+    db.set_config("safety_config", json.dumps(out))
+    camera.configure_safety(out)
+    return out
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -266,6 +323,7 @@ async def _startup():
     # Push seat map + attention profile flags to camera process
     _push_seat_map_to_camera("Class A")
     _push_attention_disabled_to_camera()
+    camera.configure_safety(_load_safety_config())
 
     # Background purge thread — runs every 24 h
     def _purge_loop():
@@ -886,10 +944,23 @@ class FeatureFlagsBody(BaseModel):
     unknown_face_alert: Optional[bool] = None
     phone_detect:       Optional[bool] = None
     pose_signals:       Optional[bool] = None
+    safety_monitor:     Optional[bool] = None
+    fall_detect:        Optional[bool] = None
+    running_detect:     Optional[bool] = None
+    restricted_zone_detect: Optional[bool] = None
+    after_hours_detect: Optional[bool] = None
+    object_safety_detect: Optional[bool] = None
+    camera_tamper_detect: Optional[bool] = None
 
 
 class RetentionBody(BaseModel):
     days: int
+
+
+class SafetyConfigBody(BaseModel):
+    school_start: str = "08:00"
+    school_end: str = "18:00"
+    restricted_zones: List[Dict[str, Any]] = []
 
 
 @app.get("/api/admin/flags")
@@ -935,6 +1006,34 @@ async def admin_purge_now():
     except Exception as e:
         print(f"[purge] clip cleanup error: {e}")
     return {"days": days, "rows_deleted": counts, "clips_deleted": purged_clips}
+
+
+@app.get("/api/safety/config")
+async def safety_config_get():
+    return _load_safety_config()
+
+
+@app.post("/api/safety/config")
+async def safety_config_set(body: SafetyConfigBody):
+    return _save_safety_config(body.dict())
+
+
+@app.post("/api/clips/manual")
+async def manual_clip_capture():
+    if camera.get_frame() is None:
+        raise HTTPException(503, "camera is not running or no replay buffer is available")
+    event = {
+        "timestamp": time.time(),
+        "primary_signal": "manual_capture",
+        "concurrent_signals": [],
+        "involved_names": [],
+        "score": 1.0,
+        "duration_s": 0.0,
+        "clip_pre_s": 30.0,
+        "clip_post_s": 0.0,
+    }
+    iid = _save_review_incident(event, "MANUAL")
+    return {"success": True, "incident_id": iid}
 
 
 # ── Threshold-tuning suggestion (read-only) ───────────────────────────────────

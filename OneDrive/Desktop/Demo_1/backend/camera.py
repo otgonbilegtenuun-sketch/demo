@@ -20,6 +20,7 @@ import numpy as np
 
 from bullying_detector import BullyingDetector, distress_from_blendshapes
 from pose_analyzer import POSE_AVAILABLE, PoseAnalyzer
+from safety_detector import SafetyDetector
 
 # Where incident video clips are written. Set by app.py via set_clips_dir().
 _CLIPS_DIR: Optional[str] = None
@@ -122,6 +123,13 @@ FEATURE_FLAGS = {
     "unknown_face_alert": False,   # high false-positive rate at corner-camera angles
     "phone_detect":       True,    # kept on; teacher policy may still need it
     "pose_signals":       POSE_AVAILABLE,  # Optional MediaPipe Pose signals
+    "safety_monitor":     True,
+    "fall_detect":        True,
+    "running_detect":     False,   # hallway cameras should enable this
+    "restricted_zone_detect": True,
+    "after_hours_detect": True,
+    "object_safety_detect": False, # extra YOLO pass; enable for hallway/security cams
+    "camera_tamper_detect": True,
 }
 
 
@@ -185,11 +193,19 @@ class CameraProcessor:
         self.on_unknown_face:  Optional[Callable] = None
         self.on_uniform:       Optional[Callable] = None
         self.on_bullying_incident: Optional[Callable] = None
+        self.on_safety_incident: Optional[Callable] = None
 
         # Bullying / incident flagger — wires to YOLO tracks + blendshape distress
         self._bullying = BullyingDetector()
         self._bullying.on_incident = self._emit_bullying_event
         self._BULLYING_INTERVAL = 6   # evaluate every N frames (~5 Hz at 30 fps)
+
+        self._safety = SafetyDetector()
+        self._safety.on_incident = self._emit_safety_event
+        self._SAFETY_INTERVAL = 6
+        self._SAFETY_OBJECT_INTERVAL = 90
+        self._safety_objects: list = []
+        self._read_fail_count = 0
 
         # JPEG ring buffer for incident clip extraction. Sampled at ~6 fps
         # (every 5th frame) to keep encode cost off the critical path.
@@ -320,8 +336,10 @@ class CameraProcessor:
             while self._running:
                 ret, frame = self._cap.read()
                 if not ret:
+                    self._handle_read_failure()
                     time.sleep(0.05)
                     continue
+                self._read_fail_count = 0
 
                 self._frame_count += 1
 
@@ -334,7 +352,8 @@ class CameraProcessor:
                 _interval = (self._PERSON_TRACK_INTERVAL if _foreground
                              else self._PERSON_TRACK_INTERVAL_BG)
                 if (self._frame_count % _interval == 0
-                        and (_foreground or self._bullying.enabled or self._seats)):
+                        and (_foreground or self._bullying.enabled or self._seats
+                             or FEATURE_FLAGS.get("safety_monitor"))):
                     try:
                         self._update_person_tracking(frame)
                         self._update_seat_occupancy(time.time())
@@ -381,6 +400,15 @@ class CameraProcessor:
                     except Exception as e:
                         print(f"[camera] YOLO phone error: {e}")
 
+                if (FEATURE_FLAGS.get("safety_monitor")
+                        and FEATURE_FLAGS.get("object_safety_detect")
+                        and self._frame_count % self._SAFETY_OBJECT_INTERVAL == 0):
+                    self._update_safety_objects(frame)
+
+                if (FEATURE_FLAGS.get("safety_monitor")
+                        and self._frame_count % self._SAFETY_INTERVAL == 0):
+                    self._run_safety_detector(frame, now)
+
                 # Bullying / incident flagger (gated to non-exam inside)
                 if self._frame_count % self._BULLYING_INTERVAL == 0:
                     self._run_bullying_detector(faces, now)
@@ -425,7 +453,8 @@ class CameraProcessor:
                 _interval = (self._PERSON_TRACK_INTERVAL if _foreground
                              else self._PERSON_TRACK_INTERVAL_BG)
                 if (self._frame_count % _interval == 0
-                        and (_foreground or self._bullying.enabled or self._seats)):
+                        and (_foreground or self._bullying.enabled or self._seats
+                             or FEATURE_FLAGS.get("safety_monitor"))):
                     try:
                         self._update_person_tracking(frame)
                         self._update_seat_occupancy(time.time())
@@ -461,7 +490,8 @@ class CameraProcessor:
                 # Continuous eval recording — every frame, no sampling
                 self._push_recorder_frame(annotated)
 
-                if (self._exam_mode
+                if (FEATURE_FLAGS.get("phone_detect")
+                        and self._exam_mode
                         and self._frame_count % self._YOLO_INTERVAL == 0
                         and faces):
                     try:
@@ -469,6 +499,15 @@ class CameraProcessor:
                         self._check_phone_alerts(now)
                     except Exception as e:
                         print(f"[camera] YOLO phone error: {e}")
+
+                if (FEATURE_FLAGS.get("safety_monitor")
+                        and FEATURE_FLAGS.get("object_safety_detect")
+                        and self._frame_count % self._SAFETY_OBJECT_INTERVAL == 0):
+                    self._update_safety_objects(frame)
+
+                if (FEATURE_FLAGS.get("safety_monitor")
+                        and self._frame_count % self._SAFETY_INTERVAL == 0):
+                    self._run_safety_detector(frame, now)
 
                 # Bullying / incident flagger (gated to non-exam inside)
                 if self._frame_count % self._BULLYING_INTERVAL == 0:
@@ -732,6 +771,70 @@ class CameraProcessor:
                 print(f"[camera] on_bullying_incident error: {e}")
 
     # ── Clip ring buffer ──────────────────────────────────────────────────────
+
+    def configure_safety(self, config: dict):
+        self._safety.configure(config or {})
+
+    def safety_config(self) -> dict:
+        return {
+            "school_start": self._safety.school_start,
+            "school_end": self._safety.school_end,
+            "restricted_zones": list(self._safety.restricted_zones),
+        }
+
+    def _run_safety_detector(self, frame: np.ndarray, now: float):
+        try:
+            self._safety.update_flags(FEATURE_FLAGS)
+            self._safety.update(
+                frame,
+                self._tracked_persons,
+                self._safety_objects,
+                now,
+                name_resolver=self._resolve_track_name,
+            )
+        except Exception as e:
+            print(f"[camera] safety detector error: {e}")
+
+    def _update_safety_objects(self, frame: np.ndarray):
+        try:
+            yolo = _get_yolo()
+            results = yolo(frame, classes=[24, 26, 28, 43, 76], verbose=False, conf=0.35)
+            objects = []
+            for r in results:
+                for box in r.boxes:
+                    cls_id = int(box.cls[0]) if box.cls is not None else -1
+                    conf = float(box.conf[0]) if box.conf is not None else 0.0
+                    x1, y1, x2, y2 = [int(v) for v in box.xyxy[0].tolist()]
+                    objects.append({
+                        "class_id": cls_id,
+                        "confidence": conf,
+                        "bbox": (x1, y1, x2, y2),
+                    })
+            self._safety_objects = objects
+        except Exception as e:
+            print(f"[camera] safety object scan error: {e}")
+
+    def _handle_read_failure(self):
+        self._read_fail_count += 1
+        if self._read_fail_count != 60:
+            return
+        self._emit_safety_event({
+            "timestamp": time.time(),
+            "primary_signal": "camera_stream_failure",
+            "concurrent_signals": [],
+            "involved_names": [],
+            "score": 0.95,
+            "duration_s": 3.0,
+            "clip_pre_s": 10.0,
+            "clip_post_s": 0.0,
+        })
+
+    def _emit_safety_event(self, event: dict):
+        if self.on_safety_incident:
+            try:
+                self.on_safety_incident(event)
+            except Exception as e:
+                print(f"[camera] on_safety_incident error: {e}")
 
     def _push_clip_frame(self, frame: np.ndarray, ts: float):
         try:

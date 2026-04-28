@@ -960,6 +960,9 @@
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
         <span>Суллах</span>
       </button>
+      <button class="btn btn-warning" id="btnManualClip" onclick="manualCaptureClip()">
+        <svg class="icon"><use href="#i-clip"/></svg><span data-i18n="btn_manual_clip">Save 30s</span>
+      </button>
     </div>
   </div>
 
@@ -1061,6 +1064,21 @@
       <div class="card-title" data-i18n="chart_title">Ангийн анхаарал цагаар</div>
       <canvas id="attChart" height="190"></canvas>
     </div>
+  </div>
+
+  <div class="card mb20">
+    <div class="card-title" data-i18n="admin_safety_config">Safety rules</div>
+    <div class="flex items-center gap8 mb16">
+      <input id="safetyStart" type="time" style="padding:6px;border:1px solid var(--border);border-radius:6px">
+      <span class="text-sm">-</span>
+      <input id="safetyEnd" type="time" style="padding:6px;border:1px solid var(--border);border-radius:6px">
+      <button class="btn btn-sm" onclick="saveSafetyConfig()" data-i18n="btn_save">Save</button>
+    </div>
+    <p class="text-muted text-sm" data-i18n="admin_zones_help" style="margin-bottom:8px">
+      Restricted zones JSON. Use camera pixel coordinates from the seat editor.
+    </p>
+    <textarea id="restrictedZonesJson" spellcheck="false"
+      style="width:100%;min-height:120px;padding:10px;border:1px solid var(--border);border-radius:6px;font-family:monospace;font-size:.82rem"></textarea>
   </div>
 
   <div class="card">
@@ -1358,6 +1376,30 @@
           <input type="checkbox" id="flagPose" onchange="setFlag('pose_signals',this.checked)">
           <span data-i18n="flag_pose">Биеийн дохио (гар өргөх, нугарах, гар хүрэх)</span>
         </label>
+        <label class="flex items-center gap8">
+          <input type="checkbox" id="flagSafety" onchange="setFlag('safety_monitor',this.checked)">
+          <span data-i18n="flag_safety">Safety monitor</span>
+        </label>
+        <label class="flex items-center gap8">
+          <input type="checkbox" id="flagFall" onchange="setFlag('fall_detect',this.checked)">
+          <span data-i18n="flag_fall">Fall / collapse</span>
+        </label>
+        <label class="flex items-center gap8">
+          <input type="checkbox" id="flagRestricted" onchange="setFlag('restricted_zone_detect',this.checked)">
+          <span data-i18n="flag_restricted">Restricted zone</span>
+        </label>
+        <label class="flex items-center gap8">
+          <input type="checkbox" id="flagAfterHours" onchange="setFlag('after_hours_detect',this.checked)">
+          <span data-i18n="flag_after_hours">After-hours presence</span>
+        </label>
+        <label class="flex items-center gap8">
+          <input type="checkbox" id="flagTamper" onchange="setFlag('camera_tamper_detect',this.checked)">
+          <span data-i18n="flag_tamper">Camera tamper</span>
+        </label>
+        <label class="flex items-center gap8">
+          <input type="checkbox" id="flagObjects" onchange="setFlag('object_safety_detect',this.checked)">
+          <span data-i18n="flag_objects">Objects / weapon-like flags</span>
+        </label>
       </div>
     </div>
 
@@ -1452,6 +1494,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=2026-04-28-eval"></script>
+<script src="/static/app.js?v=2026-04-29-safety"></script>
 </body>
 </html>

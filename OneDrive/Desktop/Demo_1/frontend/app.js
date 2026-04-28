@@ -25,6 +25,12 @@ const I18N = {
     flag_unknown:'Танигдаагүй царай (худал дохио)',
     flag_phone:'Утас (шалгалтад)',
     flag_pose:'Биеийн дохио (гар өргөх / нугарах / гар хүрэх)',
+    flag_safety:'Аюулгүй байдлын хяналт', flag_fall:'Унах / муудах',
+    flag_restricted:'Хязгаарласан бүс', flag_after_hours:'Цагийн дараах хүн',
+    flag_tamper:'Камер хаагдах / гэмтэх', flag_objects:'Эд зүйл / зэвсэг төст дохио',
+    btn_manual_clip:'30 сек хадгалах',
+    admin_safety_config:'Аюулгүй байдлын дүрэм',
+    admin_zones_help:'Хязгаарласан бүсийг JSON хэлбэрээр оруулна. Координатыг суудлын зураглалын pixel-ээр авна.',
     admin_retention:'Өгөгдөл хадгалах хугацаа', admin_days:'хоног', btn_save:'Хадгалах',
     admin_purge_now:'Одоо цэвэрлэх',
     admin_profiles:'Оюутны хувь профайл',
@@ -199,6 +205,12 @@ const I18N = {
     flag_unknown:'Unknown-face exam alert (noisy)',
     flag_phone:'Phone detection (exams)',
     flag_pose:'Pose signals (raised arm / lean / wrist reach)',
+    flag_safety:'Safety monitor', flag_fall:'Fall / collapse',
+    flag_restricted:'Restricted zone', flag_after_hours:'After-hours presence',
+    flag_tamper:'Camera tamper', flag_objects:'Objects / weapon-like flags',
+    btn_manual_clip:'Save 30s',
+    admin_safety_config:'Safety rules',
+    admin_zones_help:'Restricted zones JSON. Use camera pixel coordinates from the seat editor.',
     admin_retention:'Retention window', admin_days:'days', btn_save:'Save',
     admin_purge_now:'Purge now',
     admin_profiles:'Per-student profiles',
@@ -1108,6 +1120,20 @@ async function stopMonCam() {
   toast(t('cam_off'),'info');
 }
 
+async function manualCaptureClip() {
+  const btn = document.getElementById('btnManualClip');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await api('POST', '/api/clips/manual');
+    toast((S.lang === 'mn' ? 'Клип хадгаллаа: #' : 'Saved clip: #') + r.incident_id, 'success');
+    refreshIncidentBadge();
+  } catch (e) {
+    toast(e.message || 'Manual capture failed', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 async function lockPerson(e) {
   const img  = document.getElementById('videoStream');
   if (!img.src || img.src === window.location.href) return;
@@ -1604,6 +1630,16 @@ const INC_SIGNAL_LABELS = {
   raised_arm:        { mn: 'Гар өргөсөн',        en: 'Raised arm' },
   aggressive_lean:   { mn: 'Хэт нугарсан биеийн байрлал', en: 'Aggressive lean' },
   wrist_reach:       { mn: 'Гар хүрсэн',         en: 'Wrist reach' },
+  fall_or_collapse:  { mn: 'Унах / муудах',      en: 'Fall / collapse' },
+  running_or_fast_movement: { mn: 'Хурдан гүйх', en: 'Running / fast movement' },
+  restricted_zone_entry: { mn: 'Хязгаарласан бүс', en: 'Restricted zone entry' },
+  after_hours_presence: { mn: 'Цагийн дараах хүн', en: 'After-hours presence' },
+  unattended_object: { mn: 'Хараа хяналтгүй эд зүйл', en: 'Unattended object' },
+  weapon_like_object:{ mn: 'Зэвсэг төст эд зүйл', en: 'Weapon-like object' },
+  camera_blocked_or_dark: { mn: 'Камер хаагдсан', en: 'Camera blocked/dark' },
+  camera_blurry_or_covered: { mn: 'Камер бүрхэгдсэн', en: 'Camera blurry/covered' },
+  camera_stream_failure: { mn: 'Камер тасарсан', en: 'Camera stream failure' },
+  manual_capture:    { mn: 'Гараар хадгалсан',   en: 'Manual capture' },
 };
 
 function incSignalLabel(sig) {
@@ -1983,11 +2019,24 @@ async function initAdmin() {
     document.getElementById('flagPhone').checked   = !!flags.phone_detect;
     const fp = document.getElementById('flagPose');
     if (fp) fp.checked = !!flags.pose_signals;
+    const flagMap = {
+      flagSafety: 'safety_monitor',
+      flagFall: 'fall_detect',
+      flagRestricted: 'restricted_zone_detect',
+      flagAfterHours: 'after_hours_detect',
+      flagTamper: 'camera_tamper_detect',
+      flagObjects: 'object_safety_detect',
+    };
+    Object.entries(flagMap).forEach(([id, key]) => {
+      const el = document.getElementById(id);
+      if (el) el.checked = !!flags[key];
+    });
   } catch {}
   try {
     const r = await api('GET', '/api/admin/retention');
     document.getElementById('retentionDays').value = r.days;
   } catch {}
+  refreshSafetyConfig();
   refreshThresholdAdvice();
   refreshProfileList();
 }
@@ -2002,6 +2051,34 @@ async function saveRetention() {
   if (!Number.isFinite(days) || days < 1) { toast('Invalid days', 'error'); return; }
   try {
     await api('POST', '/api/admin/retention', { days });
+    toast(S.lang === 'mn' ? 'Хадгаллаа' : 'Saved', 'success');
+  } catch (e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+async function refreshSafetyConfig() {
+  try {
+    const cfg = await api('GET', '/api/safety/config');
+    const start = document.getElementById('safetyStart');
+    const end = document.getElementById('safetyEnd');
+    const zones = document.getElementById('restrictedZonesJson');
+    if (start) start.value = cfg.school_start || '08:00';
+    if (end) end.value = cfg.school_end || '18:00';
+    if (zones) zones.value = JSON.stringify(cfg.restricted_zones || [], null, 2);
+  } catch {}
+}
+
+async function saveSafetyConfig() {
+  const start = document.getElementById('safetyStart')?.value || '08:00';
+  const end = document.getElementById('safetyEnd')?.value || '18:00';
+  let restricted_zones = [];
+  try {
+    restricted_zones = JSON.parse(document.getElementById('restrictedZonesJson')?.value || '[]');
+  } catch {
+    toast('Restricted zones JSON is invalid', 'error');
+    return;
+  }
+  try {
+    await api('POST', '/api/safety/config', { school_start: start, school_end: end, restricted_zones });
     toast(S.lang === 'mn' ? 'Хадгаллаа' : 'Saved', 'success');
   } catch (e) { toast('Failed: ' + e.message, 'error'); }
 }

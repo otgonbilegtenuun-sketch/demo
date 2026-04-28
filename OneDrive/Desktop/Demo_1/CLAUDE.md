@@ -29,6 +29,86 @@ Seeded automatically on first run:
 | `teacher1` | `teacher123` | teacher |
 | `parent1`  | `parent123`  | parent  |
 
+## Product scope and current features
+
+Mergen AI is an edge-first classroom attendance, safety, and incident-review prototype. Position it as:
+
+> Automated attendance + seat-based classroom analytics + exam deterrence + incident replay for teacher review.
+
+Do not claim that the AI proves cheating, bullying, violence, or student intent. Every AI incident is a **review prompt**, not a verdict.
+
+Implemented features:
+
+- Student enrollment with 3-photo face embedding averaging.
+- Attendance and attention logging from live camera frames.
+- Exam mode with sideways-gaze and optional phone detection.
+- Seat-map editor at `/seats`; maps camera pixel rectangles to students.
+- Incident review queue at `/incidents`; outcomes are `confirmed`, `false_positive`, and `inconclusive`.
+- Incident clip export from the rolling replay buffer.
+- Manual "save last 30 seconds" capture from the monitor page.
+- Bullying/incident heuristics: close pair, proximity cluster, sudden motion, distress face, optional pose cues.
+- Safety heuristics: fall/collapse posture, running/fast movement, restricted-zone entry, after-hours presence, unattended bag-like object, weapon-like object, camera blocked/dark/blurry/stream failure.
+- Admin settings at `/admin`: detector flags, retention, restricted-zone JSON, school hours, per-student opt-out profiles, threshold review summary.
+- Eval workflow at `/eval`: record clips, label clips, run `eval/run_eval.py`, and view precision/recall/FPR.
+
+## Hardware targets
+
+For a 10-camera pilot, use one central GPU PC and low-resolution RTSP substreams.
+
+Recommended minimum serious setup:
+
+- CPU: Intel i5-12400/i5-13400 or Ryzen 5 5600+
+- GPU: RTX 3060 12GB or RTX 4060 8GB
+- RAM: 32GB
+- Storage: 1TB NVMe, plus HDD/NAS only if retaining many clips
+- Network: gigabit LAN with PoE switch
+- Camera AI stream: 640x360 or 720p at 3-5 FPS, not full 1080p/4K
+
+Primary bottlenecks:
+
+1. GPU inference: YOLO, ArcFace, optional object/pose/emotion models.
+2. CPU video decoding and stream management.
+3. Disk only when recording many clips/full video.
+4. RAM is usually fine once 32GB is available.
+
+Capacity assumptions:
+
+- CPU-only old office PC: 2-3 cameras with limited detection.
+- i5 + RTX 3060/4060 + 32GB: target 8-12 optimized cameras.
+- i7 + RTX 4070 + 32GB/64GB: target 15-25 optimized cameras.
+
+The current codebase is still a single-camera `CameraProcessor`. Multi-camera production needs a `CameraManager` that owns one processor per RTSP stream, batches model inference where possible, and tags every event with `camera_id` and `classroom_id`.
+
+## Recommended production stack
+
+Keep this stack for the current prototype:
+
+- Backend: Python + FastAPI + OpenCV.
+- ML/runtime: MediaPipe Face Landmarker, DeepFace ArcFace, Ultralytics YOLO.
+- Storage: SQLite for prototype/single school edge box.
+- Frontend: current static SPA is acceptable for the prototype.
+
+For production:
+
+- Backend: FastAPI service split into API process + camera worker process.
+- Queue: `queue.Queue` locally first; Redis/RQ or Celery if multi-process.
+- DB: PostgreSQL for school/cloud metadata; SQLite only on a single edge box.
+- Frontend: Next.js/React only after the product flows stabilize. Do not migrate now just for style.
+- Video: keep raw video/clips on-prem by default; cloud receives metadata only unless explicitly configured.
+- Deployment: one edge service per school, systemd/Windows service, rotating logs, health endpoint.
+
+## Version control policy
+
+- Commit source files only; do not commit `classroom.db`, generated clips, photos, uploads, model downloads, or eval video clips.
+- Use focused commits with clear messages.
+- Validate before pushing:
+
+```bash
+python -c "import ast; files=['backend/app.py','backend/camera.py','backend/database.py','backend/bullying_detector.py','backend/pose_analyzer.py','backend/safety_detector.py','eval/run_eval.py']; [ast.parse(open(f, encoding='utf-8').read()) for f in files]; print('py OK')"
+node -e "new Function(require('fs').readFileSync('frontend/app.js','utf8')); console.log('js OK')"
+python eval/run_eval.py
+```
+
 ## Architecture
 
 This is a **single-page application** where all page routes (`/`, `/monitor`, `/dashboard/teacher`, etc.) return the same `frontend/index.html`. Client-side routing is handled in `frontend/app.js` via `history.pushState`. All backend endpoints are prefixed `/api/`.
