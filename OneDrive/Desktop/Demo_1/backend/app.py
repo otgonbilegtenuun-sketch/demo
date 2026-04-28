@@ -21,8 +21,15 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import threading
+
 import database as db
-from camera import CameraProcessor, process_enrollment_image
+from camera import (
+    FEATURE_FLAGS,
+    CameraProcessor,
+    process_enrollment_image,
+    set_clips_dir,
+)
 from database import get_all_students, delete_student
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -68,11 +75,15 @@ FRONTEND_DIR = os.path.join(_BASE, "..", "frontend")
 PHOTOS_DIR   = os.path.join(_BASE, "..", "photos")
 UPLOADS_DIR  = os.path.join(_BASE, "..", "uploads")
 ICONS_DIR    = os.path.join(_BASE, "..", "frontend", "icons")
+CLIPS_DIR    = os.path.join(_BASE, "..", "clips")
 os.makedirs(PHOTOS_DIR,  exist_ok=True)
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(ICONS_DIR,   exist_ok=True)
+os.makedirs(CLIPS_DIR,   exist_ok=True)
+set_clips_dir(CLIPS_DIR)
 
 app.mount("/photos", StaticFiles(directory=PHOTOS_DIR), name="photos")
+app.mount("/clips",  StaticFiles(directory=CLIPS_DIR),  name="clips")
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 # NOTE: /icons is also registered as an explicit route below (more reload-friendly)
 
@@ -124,9 +135,17 @@ def _on_faces_recognized(face_data: list) -> set:
         matched_indices.add(face_idx)
 
         camera.set_face_name(face_idx, student["name"])
-        db.update_attendance(student["id"], attentive)
-        db.log_attention(student["id"], student["name"], attentive)
-        if camera.exam_mode and sideways:
+
+        # IEP/ADHD profile: skip attention bookkeeping for opted-out students.
+        # Attendance still records (last_seen, total_frames) but is treated as
+        # always-attentive so the student isn't penalised.
+        skip_attention = camera.is_attention_disabled(student["id"])
+        eff_attentive  = True if skip_attention else attentive
+        db.update_attendance(student["id"], eff_attentive)
+        if not skip_attention:
+            db.log_attention(student["id"], student["name"], attentive)
+
+        if camera.exam_mode and sideways and not skip_attention:
             db.save_alert(student["id"], student["name"], "suspicious_glance")
             print(f"[ALERT] {student['name']} suspicious glance (sim={sim:.3f})")
 
@@ -174,10 +193,61 @@ def _on_phone_suspect(name: str):
     print(f"[ALERT] {name} phone/down-gaze detected")
 
 
-camera.on_recognition   = _on_faces_recognized
-camera.on_unknown_face  = _on_unknown_face
-camera.on_phone_suspect = _on_phone_suspect
-camera.on_uniform       = _on_uniform
+def _on_bullying_incident(event: dict):
+    """
+    Called by the camera thread when the heuristic flagger fires.
+    NOTE: This flags spatial/temporal patterns that *correlate* with bullying;
+    it is NOT a verdict. All incidents must be reviewed by staff.
+    """
+    try:
+        iid = db.save_bullying_incident(
+            primary_signal     = event.get("primary_signal", "unknown"),
+            concurrent_signals = event.get("concurrent_signals", []),
+            involved_names     = event.get("involved_names", []),
+            score              = event.get("score", 0.0),
+            duration_s         = event.get("duration_s", 0.0),
+        )
+        print(f"[BULLYING] flag #{iid}: {event['primary_signal']} "
+              f"score={event['score']} names={event.get('involved_names')}")
+
+        center_ts = float(event.get("timestamp", time.time()))
+        threading.Thread(
+            target=_dump_incident_clip,
+            args=(iid, center_ts),
+            daemon=True,
+        ).start()
+    except Exception as e:
+        print(f"[BULLYING] save error: {e}")
+
+
+def _dump_incident_clip(incident_id: int, center_ts: float):
+    """Background: write the ring-buffer clip and update the DB row."""
+    try:
+        path = camera.dump_clip(center_ts)
+        if not path:
+            return
+        # Rename to use the incident id so the URL is stable
+        final_name = f"incident_{incident_id}.mp4"
+        final_path = os.path.join(CLIPS_DIR, final_name)
+        try:
+            if os.path.exists(final_path):
+                os.remove(final_path)
+            os.rename(path, final_path)
+        except Exception:
+            final_path = path
+            final_name = os.path.basename(path)
+        url = f"/clips/{final_name}"
+        db.update_bullying_clip_path(incident_id, url)
+        print(f"[BULLYING] clip #{incident_id} → {url}")
+    except Exception as e:
+        print(f"[BULLYING] clip dump error #{incident_id}: {e}")
+
+
+camera.on_recognition       = _on_faces_recognized
+camera.on_unknown_face      = _on_unknown_face
+camera.on_phone_suspect     = _on_phone_suspect
+camera.on_uniform           = _on_uniform
+camera.on_bullying_incident = _on_bullying_incident
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -186,6 +256,29 @@ camera.on_uniform       = _on_uniform
 async def _startup():
     db.init_db()
     print("[Mergen AI] Database ready")
+
+    # Load persisted feature flags (overrides defaults baked into camera.py)
+    for k in list(FEATURE_FLAGS.keys()):
+        v = db.get_config(f"flag.{k}")
+        if v is not None:
+            FEATURE_FLAGS[k] = (v == "1")
+
+    # Push seat map + attention profile flags to camera process
+    _push_seat_map_to_camera("Class A")
+    _push_attention_disabled_to_camera()
+
+    # Background purge thread — runs every 24 h
+    def _purge_loop():
+        while True:
+            try:
+                time.sleep(24 * 3600)
+                days = int(db.get_config("retention_days", "30"))
+                counts = db.purge_old_data(days)
+                print(f"[purge] retention={days}d rows={counts}")
+            except Exception as e:
+                print(f"[purge] error: {e}")
+                time.sleep(3600)
+    threading.Thread(target=_purge_loop, daemon=True).start()
 
 
 @app.on_event("shutdown")
@@ -227,6 +320,15 @@ async def page_admin():            return serve_html()
 
 @app.get("/students")
 async def page_students():         return serve_html()
+
+@app.get("/incidents")
+async def page_incidents():        return serve_html()
+
+@app.get("/seats")
+async def page_seats():            return serve_html()
+
+@app.get("/admin")
+async def page_admin():            return serve_html()
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -610,6 +712,47 @@ async def phone_alert(body: PhoneBody = None):
     return {"success": True, "student": name}
 
 
+# ── Bullying / incident flagging ──────────────────────────────────────────────
+
+class BullyingReviewBody(BaseModel):
+    outcome: str   # confirmed | false_positive | inconclusive
+
+
+class BullyingConfigBody(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/bullying/recent")
+async def bullying_recent(since_id: int = 0, limit: int = 50):
+    return db.get_recent_bullying_incidents(since_id=since_id, limit=limit)
+
+
+@app.get("/api/bullying/stats")
+async def bullying_stats():
+    return db.get_bullying_stats()
+
+
+@app.post("/api/bullying/{incident_id}/review")
+async def bullying_review(incident_id: int, body: BullyingReviewBody):
+    if body.outcome not in ("confirmed", "false_positive", "inconclusive"):
+        raise HTTPException(400, "Invalid outcome")
+    ok = db.review_bullying_incident(incident_id, body.outcome)
+    if not ok:
+        raise HTTPException(404, "Incident not found")
+    return {"success": True}
+
+
+@app.get("/api/bullying/config")
+async def bullying_config_get():
+    return {"enabled": camera._bullying.enabled}
+
+
+@app.post("/api/bullying/config")
+async def bullying_config_set(body: BullyingConfigBody):
+    camera._bullying.enabled = body.enabled
+    return {"enabled": camera._bullying.enabled}
+
+
 # ── Uniform ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/uniform/today")
@@ -633,6 +776,347 @@ async def uniform_weekly():
 async def reset_demo():
     db.reset_today_data()
     return {"success": True}
+
+
+# ── Seat map ──────────────────────────────────────────────────────────────────
+
+class SeatBody(BaseModel):
+    student_id: Optional[int] = None
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+
+
+class SeatMapBody(BaseModel):
+    class_name: str = "Class A"
+    seats: List[SeatBody]
+
+
+def _push_seat_map_to_camera(class_name: str = "Class A"):
+    """Reload the camera's in-memory seat map from the DB."""
+    seats = db.get_seat_map(class_name)
+    camera.set_seat_map([
+        {
+            "id":           s["id"],
+            "student_id":   s["student_id"],
+            "student_name": s.get("student_name"),
+            "x1": s["x1"], "y1": s["y1"], "x2": s["x2"], "y2": s["y2"],
+        }
+        for s in seats
+    ])
+    return seats
+
+
+@app.get("/api/seats")
+async def seats_get(class_name: str = "Class A"):
+    return db.get_seat_map(class_name)
+
+
+@app.post("/api/seats")
+async def seats_set(body: SeatMapBody):
+    db.replace_seat_map(body.class_name, [s.dict() for s in body.seats])
+    seats = _push_seat_map_to_camera(body.class_name)
+    return {"saved": len(seats), "seats": seats}
+
+
+@app.delete("/api/seats")
+async def seats_clear(class_name: str = "Class A"):
+    db.clear_seat_map(class_name)
+    _push_seat_map_to_camera(class_name)
+    return {"cleared": True}
+
+
+@app.get("/api/seats/occupancy")
+async def seats_occupancy():
+    return camera.get_seat_occupancy_snapshot()
+
+
+@app.get("/api/snapshot")
+async def snapshot():
+    """Return the latest annotated camera frame as JPEG — used by the seat editor."""
+    frame = camera.get_frame()
+    if frame is None:
+        raise HTTPException(503, "Камер ажиллахгүй байна")
+    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    if not ok:
+        raise HTTPException(500, "encode failed")
+    from fastapi.responses import Response
+    return Response(content=buf.tobytes(), media_type="image/jpeg")
+
+
+# ── Per-student behavior profile ──────────────────────────────────────────────
+
+class StudentProfileBody(BaseModel):
+    attention_disabled: Optional[bool] = None
+    distress_disabled:  Optional[bool] = None
+    profile_note:       Optional[str]  = None
+
+
+def _push_attention_disabled_to_camera():
+    camera.set_attention_disabled_ids(db.get_attention_disabled_ids())
+
+
+@app.get("/api/students/{student_id}/profile")
+async def student_profile_get(student_id: int):
+    p = db.get_student_profile(student_id)
+    if not p:
+        raise HTTPException(404, "Оюутан олдсонгүй")
+    return p
+
+
+@app.patch("/api/students/{student_id}/profile")
+async def student_profile_patch(student_id: int, body: StudentProfileBody):
+    ok = db.update_student_profile(
+        student_id,
+        attention_disabled=body.attention_disabled,
+        distress_disabled=body.distress_disabled,
+        profile_note=body.profile_note,
+    )
+    if not ok:
+        raise HTTPException(400, "no change")
+    _push_attention_disabled_to_camera()
+    return db.get_student_profile(student_id)
+
+
+# ── Admin config: feature flags + retention ───────────────────────────────────
+
+class FeatureFlagsBody(BaseModel):
+    uniform_detect:     Optional[bool] = None
+    unknown_face_alert: Optional[bool] = None
+    phone_detect:       Optional[bool] = None
+    pose_signals:       Optional[bool] = None
+
+
+class RetentionBody(BaseModel):
+    days: int
+
+
+@app.get("/api/admin/flags")
+async def admin_flags_get():
+    return dict(FEATURE_FLAGS)
+
+
+@app.post("/api/admin/flags")
+async def admin_flags_set(body: FeatureFlagsBody):
+    for k, v in body.dict(exclude_none=True).items():
+        if k in FEATURE_FLAGS:
+            FEATURE_FLAGS[k] = bool(v)
+            db.set_config(f"flag.{k}", "1" if v else "0")
+    return dict(FEATURE_FLAGS)
+
+
+@app.get("/api/admin/retention")
+async def admin_retention_get():
+    days = int(db.get_config("retention_days", "30"))
+    return {"days": days}
+
+
+@app.post("/api/admin/retention")
+async def admin_retention_set(body: RetentionBody):
+    if body.days < 1 or body.days > 3650:
+        raise HTTPException(400, "days must be 1..3650")
+    db.set_config("retention_days", str(body.days))
+    return {"days": body.days}
+
+
+@app.post("/api/admin/purge")
+async def admin_purge_now():
+    days = int(db.get_config("retention_days", "30"))
+    counts = db.purge_old_data(days)
+    # Also purge old clip files
+    cutoff = time.time() - days * 86400
+    purged_clips = 0
+    try:
+        for fn in os.listdir(CLIPS_DIR):
+            p = os.path.join(CLIPS_DIR, fn)
+            if os.path.isfile(p) and os.path.getmtime(p) < cutoff:
+                os.remove(p); purged_clips += 1
+    except Exception as e:
+        print(f"[purge] clip cleanup error: {e}")
+    return {"days": days, "rows_deleted": counts, "clips_deleted": purged_clips}
+
+
+# ── Threshold-tuning suggestion (read-only) ───────────────────────────────────
+
+@app.get("/api/bullying/threshold-suggestion")
+async def bullying_threshold_suggestion():
+    """Return per-signal precision and a suggested threshold from reviewed
+       incidents. Caller can apply manually via /api/bullying/config (not
+       auto-applied — needs human sanity-check)."""
+    rows = db.get_review_stats_by_signal()
+    return {
+        "current_threshold": camera._bullying.INCIDENT_THRESHOLD,
+        "by_signal":         rows,
+        "advice": (
+            "Review at least 30 incidents before trusting suggestions. "
+            "Apply by editing INCIDENT_THRESHOLD in bullying_detector.py."
+        ),
+    }
+
+
+# ── Eval workflow (record → label → run) ──────────────────────────────────────
+
+EVAL_DIR        = os.path.join(_BASE, "..", "eval")
+EVAL_CLIPS_DIR  = os.path.join(EVAL_DIR, "clips")
+EVAL_LABELS_CSV = os.path.join(EVAL_DIR, "labels.csv")
+EVAL_RESULTS    = os.path.join(EVAL_DIR, "last_run.json")
+os.makedirs(EVAL_CLIPS_DIR, exist_ok=True)
+
+ALLOWED_LABELS = {"fight", "crowd_bully", "normal", "crowd_normal", "note_passing"}
+
+# Mount eval clips so the frontend can preview them
+app.mount("/eval_clips", StaticFiles(directory=EVAL_CLIPS_DIR), name="eval_clips")
+
+
+def _read_labels_csv() -> dict:
+    import csv
+    out = {}
+    if os.path.exists(EVAL_LABELS_CSV):
+        with open(EVAL_LABELS_CSV) as f:
+            for row in csv.DictReader(f):
+                if row.get("filename") and row.get("truth_label"):
+                    out[row["filename"]] = row["truth_label"]
+    return out
+
+
+def _write_labels_csv(labels: dict):
+    import csv
+    with open(EVAL_LABELS_CSV, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["filename", "truth_label"])
+        w.writeheader()
+        for fn, lbl in sorted(labels.items()):
+            w.writerow({"filename": fn, "truth_label": lbl})
+
+
+class EvalRecordBody(BaseModel):
+    duration_s: int = 60
+    filename:   Optional[str] = None
+
+
+@app.post("/api/eval/record/start")
+async def eval_record_start(body: EvalRecordBody):
+    if not camera.is_running:
+        raise HTTPException(503, "Камер ажиллахгүй байна. Эхлүүлнэ үү.")
+    if body.duration_s < 5 or body.duration_s > 600:
+        raise HTTPException(400, "duration_s must be 5..600")
+    fn = body.filename or f"clip_{int(time.time())}.mp4"
+    if not fn.endswith(".mp4"):
+        fn += ".mp4"
+    if "/" in fn or "\\" in fn or ".." in fn:
+        raise HTTPException(400, "invalid filename")
+    path = os.path.join(EVAL_CLIPS_DIR, fn)
+    ok = camera.start_recording(path, max_seconds=body.duration_s, fps=12)
+    if not ok:
+        raise HTTPException(503, "Recording failed (no frame yet?)")
+    return {"started": True, "filename": fn, "duration_s": body.duration_s}
+
+
+@app.post("/api/eval/record/stop")
+async def eval_record_stop():
+    p = camera.stop_recording()
+    return {"stopped": True, "path": p}
+
+
+@app.get("/api/eval/record/status")
+async def eval_record_status():
+    return camera.recording_status()
+
+
+@app.get("/api/eval/clips")
+async def eval_list_clips():
+    labels = _read_labels_csv()
+    out = []
+    for fn in sorted(os.listdir(EVAL_CLIPS_DIR)):
+        if not fn.endswith(".mp4"):
+            continue
+        p = os.path.join(EVAL_CLIPS_DIR, fn)
+        out.append({
+            "filename":     fn,
+            "size_bytes":   os.path.getsize(p),
+            "modified":     int(os.path.getmtime(p)),
+            "url":          f"/eval_clips/{fn}",
+            "truth_label":  labels.get(fn),
+        })
+    return out
+
+
+class EvalLabelBody(BaseModel):
+    truth_label: str
+
+
+@app.post("/api/eval/clips/{filename}/label")
+async def eval_label_clip(filename: str, body: EvalLabelBody):
+    if "/" in filename or "\\" in filename:
+        raise HTTPException(400, "invalid filename")
+    if body.truth_label not in ALLOWED_LABELS:
+        raise HTTPException(400, f"label must be one of {sorted(ALLOWED_LABELS)}")
+    if not os.path.exists(os.path.join(EVAL_CLIPS_DIR, filename)):
+        raise HTTPException(404, "clip not found")
+    labels = _read_labels_csv()
+    labels[filename] = body.truth_label
+    _write_labels_csv(labels)
+    return {"saved": True, "filename": filename, "truth_label": body.truth_label}
+
+
+@app.delete("/api/eval/clips/{filename}")
+async def eval_delete_clip(filename: str):
+    if "/" in filename or "\\" in filename:
+        raise HTTPException(400, "invalid filename")
+    p = os.path.join(EVAL_CLIPS_DIR, filename)
+    if os.path.exists(p):
+        os.remove(p)
+    labels = _read_labels_csv()
+    if labels.pop(filename, None) is not None:
+        _write_labels_csv(labels)
+    return {"deleted": True}
+
+
+@app.post("/api/eval/run")
+async def eval_run():
+    """Run the evaluation harness. Writes eval/last_run.json and returns it.
+       NOTE: stops the live camera if it's running, since the runner spawns
+       its own CameraProcessor per clip and uses the same webcam index."""
+    runner = os.path.join(EVAL_DIR, "run_eval.py")
+    if not os.path.exists(runner):
+        raise HTTPException(404, "eval/run_eval.py not found")
+    if not _read_labels_csv():
+        raise HTTPException(400, "no labeled clips — record some and assign labels first")
+    # Pause the live camera for the duration of the eval
+    was_running = camera.is_running
+    if was_running:
+        camera.stop()
+    import subprocess, json as _json
+    try:
+        out = subprocess.check_output(
+            ["python", runner, "--json"],
+            cwd=EVAL_DIR, stderr=subprocess.STDOUT, timeout=600,
+        )
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(500, e.output.decode("utf-8", errors="replace"))
+    finally:
+        if was_running:
+            camera.start()
+    if os.path.exists(EVAL_RESULTS):
+        with open(EVAL_RESULTS) as f:
+            return _json.load(f)
+    return {"output": out.decode("utf-8", errors="replace")}
+
+
+@app.get("/api/eval/results")
+async def eval_results():
+    """Latest eval results JSON, or empty stub if never run."""
+    import json as _json
+    if os.path.exists(EVAL_RESULTS):
+        with open(EVAL_RESULTS) as f:
+            return _json.load(f)
+    return {"never_run": True}
+
+
+# ── Eval page route ──────────────────────────────────────────────────────────
+
+@app.get("/eval")
+async def page_eval():             return serve_html()
 
 
 # ── SPA catch-all (must be last) ──────────────────────────────────────────────

@@ -172,6 +172,15 @@
       <svg class="icon"><use href="#i-user-plus"/></svg>
       <span data-i18n="nav_enroll">Бүртгэл</span>
     </a>
+    <a href="/incidents" onclick="go(event,'/incidents')">
+      <svg class="icon"><use href="#i-alert"/></svg>
+      <span data-i18n="nav_incidents">Хэргийн жагсаалт</span>
+      <span id="navIncidentBadge" class="nav-badge" style="display:none">0</span>
+    </a>
+    <a href="/seats" onclick="go(event,'/seats')">
+      <svg class="icon"><use href="#i-grid"/></svg>
+      <span data-i18n="nav_seats">Суудал</span>
+    </a>
   </div>
 
   <!-- Parent nav -->
@@ -184,6 +193,10 @@
     <a href="/monitor"  onclick="go(event,'/monitor')">  <svg class="icon"><use href="#i-camera"/></svg>    <span data-i18n="nav_monitor">Хяналт</span></a>
     <a href="/students" onclick="go(event,'/students')"> <svg class="icon"><use href="#i-users"/></svg>     <span data-i18n="nav_students">Оюутнууд</span></a>
     <a href="/enroll"   onclick="go(event,'/enroll')">   <svg class="icon"><use href="#i-user-plus"/></svg> <span data-i18n="nav_enroll">Бүртгэл</span></a>
+    <a href="/incidents" onclick="go(event,'/incidents')"><svg class="icon"><use href="#i-alert"/></svg>    <span data-i18n="nav_incidents">Хэргийн жагсаалт</span><span id="navIncidentBadgeAdmin" class="nav-badge" style="display:none">0</span></a>
+    <a href="/seats"     onclick="go(event,'/seats')">    <svg class="icon"><use href="#i-grid"/></svg>     <span data-i18n="nav_seats">Суудал</span></a>
+    <a href="/admin"     onclick="go(event,'/admin')">    <svg class="icon"><use href="#i-shield"/></svg>   <span data-i18n="nav_admin_cfg">Тохиргоо</span></a>
+    <a href="/eval"      onclick="go(event,'/eval')">     <svg class="icon"><use href="#i-chart"/></svg>    <span data-i18n="nav_eval">Үнэлгээ</span></a>
   </div>
 
   <!-- Landing section links — always visible, spread out like CommonApp -->
@@ -1204,6 +1217,241 @@
   </div>
 </div>
 
-<script src="/static/app.js"></script>
+<!-- ═══════════════════ INCIDENT REVIEW QUEUE ═══════════════════════════ -->
+<div id="page-incidents" class="page">
+  <div class="page-header-row page-header">
+    <div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="icon-box icon-box-sm"><svg class="icon-lg"><use href="#i-alert"/></svg></div>
+        <h1 data-i18n="inc_h1">Хэргийн жагсаалт</h1>
+      </div>
+      <p style="color:var(--muted);font-size:.9rem;max-width:720px" data-i18n="inc_sub">
+        AI нь зан үйлийн загвараар сэжиглэсэн хэргүүд. Видео бичлэг үзээд багш баталгаажуулна.
+        Энэ нь шийдвэр гаргах хэрэгсэл биш — зөвхөн анхааруулга.
+      </p>
+    </div>
+    <div class="flex gap8 items-center">
+      <label class="toggle">
+        <input type="checkbox" id="incEnabledToggle" onchange="toggleBullyingDetector(this.checked)">
+        <span class="toggle-track"></span><span class="toggle-thumb"></span>
+      </label>
+      <span class="text-sm" data-i18n="inc_detect_on">Илрүүлэгч идэвхтэй</span>
+    </div>
+  </div>
+
+  <div class="g4 mb20">
+    <div class="card stat-card">
+      <div class="stat-val" id="incToday" style="color:var(--danger)">—</div>
+      <div class="stat-label" data-i18n="inc_today">Өнөөдөр</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-val" id="incWeek" style="color:var(--accent)">—</div>
+      <div class="stat-label" data-i18n="inc_week">7 хоногт</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-val" id="incPending" style="color:var(--warning)">—</div>
+      <div class="stat-label" data-i18n="inc_pending">Хүлээгдэж буй</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-val" id="incTopSig" style="color:var(--text);font-size:1.1rem">—</div>
+      <div class="stat-label" data-i18n="inc_top_sig">Гол дохио</div>
+    </div>
+  </div>
+
+  <div class="card mb20" style="background:#FFFBEB;border:1px solid #FDE68A">
+    <div style="display:flex;gap:10px;align-items:flex-start">
+      <svg class="icon-lg" style="color:#D97706;flex-shrink:0"><use href="#i-info"/></svg>
+      <div class="text-sm" style="line-height:1.55;color:#92400E">
+        <strong data-i18n="inc_disclaimer_t">Анхаарал:</strong>
+        <span data-i18n="inc_disclaimer">
+          Энэ систем зөвхөн орон зайн ба сэтгэлийн илрэлийн загварыг хүний хяналтад шилжүүлдэг.
+          Аль ч хэрэг бодит дээрэлхэлт гэдгийг баталгаажуулах боломжгүй — багш видеог үзэж шийдвэрлэнэ.
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex gap8 mb16">
+    <button class="btn btn-sm" id="incFilterPending" onclick="setIncFilter('pending')">
+      <span data-i18n="inc_f_pending">Хүлээгдэж буй</span>
+    </button>
+    <button class="btn btn-sm btn-secondary" id="incFilterAll" onclick="setIncFilter('all')">
+      <span data-i18n="inc_f_all">Бүгд</span>
+    </button>
+  </div>
+
+  <div id="incList" style="display:flex;flex-direction:column;gap:14px">
+    <p class="text-muted text-sm" data-i18n="loading">Уншиж байна…</p>
+  </div>
+</div>
+
+<!-- ═══════════════════ SEAT MAP EDITOR ═══════════════════════════════════ -->
+<div id="page-seats" class="page">
+  <div class="page-header-row page-header">
+    <div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="icon-box icon-box-sm"><svg class="icon-lg"><use href="#i-grid"/></svg></div>
+        <h1 data-i18n="seats_h1">Анги: суудлын зураглал</h1>
+      </div>
+      <p style="color:var(--muted);font-size:.9rem;max-width:740px" data-i18n="seats_sub">
+        Камераас зураг авч суудлуудыг тэмдэглэнэ. Суудал бүрд оюутан хуваарилснаар таних шаардлагагүйгээр ирц хэмжигдэнэ.
+      </p>
+    </div>
+    <div class="flex gap8">
+      <button class="btn btn-sm" onclick="seatsRefreshSnapshot()" data-i18n="seats_snap">Зураг шинэчлэх</button>
+      <button class="btn btn-sm btn-secondary" onclick="seatsClearAll()" data-i18n="seats_clear">Бүгд устгах</button>
+      <button class="btn btn-sm btn-primary" onclick="seatsSaveAll()" data-i18n="seats_save">Хадгалах</button>
+    </div>
+  </div>
+
+  <div class="card mb20" style="padding:14px;background:#EFF6FF;border:1px solid #BFDBFE">
+    <div class="text-sm" style="color:#1E40AF;line-height:1.55">
+      <strong data-i18n="seats_help_t">Заавар:</strong>
+      <span data-i18n="seats_help">
+        Зураг дээр баруун булангаас зүүн доош чирж тэгш өнцөгт зурна. Дараа нь оюутан сонгоно. Тэгш өнцөгт дээр товшиж устгана.
+      </span>
+    </div>
+  </div>
+
+  <div style="position:relative;display:inline-block;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:#000">
+    <img id="seatsImg" alt="" style="display:block;max-width:100%;user-select:none;-webkit-user-drag:none">
+    <canvas id="seatsCanvas" style="position:absolute;inset:0;cursor:crosshair"></canvas>
+  </div>
+
+  <div class="card mt16" style="margin-top:16px">
+    <div class="card-title" data-i18n="seats_list">Тэмдэглэсэн суудлууд</div>
+    <div id="seatsList" class="text-muted text-sm" data-i18n="seats_none">Хараахан байхгүй</div>
+  </div>
+</div>
+
+<!-- ═══════════════════ ADMIN CONFIG ══════════════════════════════════════ -->
+<div id="page-admin" class="page">
+  <div class="page-header-row page-header">
+    <div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="icon-box icon-box-sm"><svg class="icon-lg"><use href="#i-shield"/></svg></div>
+        <h1 data-i18n="admin_h1">Тохиргоо</h1>
+      </div>
+      <p style="color:var(--muted);font-size:.9rem" data-i18n="admin_sub">
+        Илрүүлэгчийн флагууд, өгөгдөл хадгалах хугацаа, оюутны хувь профайл.
+      </p>
+    </div>
+  </div>
+
+  <div class="g2 mb20">
+    <div class="card">
+      <div class="card-title" data-i18n="admin_flags">Илрүүлэгчийн флагууд</div>
+      <div class="flex" style="flex-direction:column;gap:10px">
+        <label class="flex items-center gap8">
+          <input type="checkbox" id="flagUniform" onchange="setFlag('uniform_detect',this.checked)">
+          <span data-i18n="flag_uniform">Дүрэмт хувцас (HSV — найдвартай биш)</span>
+        </label>
+        <label class="flex items-center gap8">
+          <input type="checkbox" id="flagUnknown" onchange="setFlag('unknown_face_alert',this.checked)">
+          <span data-i18n="flag_unknown">Танигдаагүй царай (худал дохио ихтэй)</span>
+        </label>
+        <label class="flex items-center gap8">
+          <input type="checkbox" id="flagPhone" onchange="setFlag('phone_detect',this.checked)">
+          <span data-i18n="flag_phone">Утасны илрүүлэлт (шалгалтад)</span>
+        </label>
+        <label class="flex items-center gap8">
+          <input type="checkbox" id="flagPose" onchange="setFlag('pose_signals',this.checked)">
+          <span data-i18n="flag_pose">Биеийн дохио (гар өргөх, нугарах, гар хүрэх)</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" data-i18n="admin_retention">Өгөгдөл хадгалах хугацаа</div>
+      <div class="flex items-center gap8 mb16">
+        <input id="retentionDays" type="number" min="1" max="3650"
+               style="width:120px;padding:6px;border:1px solid var(--border);border-radius:6px">
+        <span class="text-sm" data-i18n="admin_days">хоног</span>
+        <button class="btn btn-sm" onclick="saveRetention()" data-i18n="btn_save">Хадгалах</button>
+      </div>
+      <button class="btn btn-sm btn-danger" onclick="purgeNow()" data-i18n="admin_purge_now">
+        Одоо цэвэрлэх
+      </button>
+      <div id="purgeResult" class="text-muted text-sm mt16" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" data-i18n="admin_profiles">Оюутны хувь профайл</div>
+    <p class="text-muted text-sm" data-i18n="admin_profiles_sub" style="margin-bottom:12px">
+      ADHD / IEP-тэй оюутнуудад анхаарлын дохио бүртгэхгүй байх.
+    </p>
+    <div id="profileList" class="text-muted text-sm" data-i18n="loading">Уншиж байна…</div>
+  </div>
+
+  <div class="card mt16" style="margin-top:16px">
+    <div class="card-title" data-i18n="admin_threshold">Босгоны зөвлөмж (review-ээс)</div>
+    <div id="thresholdAdvice" class="text-sm">—</div>
+  </div>
+</div>
+
+<!-- ═══════════════════ EVAL WORKFLOW ════════════════════════════════════ -->
+<div id="page-eval" class="page">
+  <div class="page-header-row page-header">
+    <div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="icon-box icon-box-sm"><svg class="icon-lg"><use href="#i-chart"/></svg></div>
+        <h1 data-i18n="eval_h1">Үнэлгээ — бодит датан дээр шалгах</h1>
+      </div>
+      <p style="color:var(--muted);font-size:.9rem;max-width:760px" data-i18n="eval_sub">
+        Бодит ангиас бичлэг авч, тэдгээрт шошго өгч, илрүүлэгчийг шалгана.
+        Энэ өгөгдөлгүйгээр босго тохируулах нь зөвхөн таамаг.
+      </p>
+    </div>
+  </div>
+
+  <div class="card mb20" style="background:#FFFBEB;border:1px solid #FDE68A">
+    <div class="text-sm" style="color:#92400E;line-height:1.55">
+      <strong data-i18n="eval_warn_t">Анхаар:</strong>
+      <span data-i18n="eval_warn">Бичих үед камер ажиллаж байх ёстой. Үнэлгээ ажиллах үед камер түр зогсоно.</span>
+    </div>
+  </div>
+
+  <div class="g2 mb20">
+    <div class="card">
+      <div class="card-title" data-i18n="eval_record_t">Бичлэг авах</div>
+      <div class="flex items-center gap8 mb16">
+        <input id="evalRecDur" type="number" min="5" max="600" value="60"
+               style="width:100px;padding:6px;border:1px solid var(--border);border-radius:6px">
+        <span class="text-sm" data-i18n="eval_seconds">секунд</span>
+        <button class="btn btn-sm btn-primary" id="evalRecStartBtn" onclick="evalRecStart()" data-i18n="eval_rec_start">
+          Бичлэг эхлүүлэх
+        </button>
+        <button class="btn btn-sm btn-danger" id="evalRecStopBtn" onclick="evalRecStop()" style="display:none" data-i18n="eval_rec_stop">
+          Зогсоох
+        </button>
+      </div>
+      <div id="evalRecStatus" class="text-muted text-sm">—</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" data-i18n="eval_run_t">Үнэлгээ ажиллуулах</div>
+      <p class="text-muted text-sm mb16" data-i18n="eval_run_sub">
+        Шошготой бичлэг бүр дээр илрүүлэгчийг ажиллуулж precision / recall гаргана.
+      </p>
+      <button class="btn btn-primary" onclick="evalRun()" data-i18n="eval_run_btn">
+        Үнэлгээ ажиллуулах
+      </button>
+      <div id="evalRunStatus" class="text-muted text-sm" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div class="card mb20">
+    <div class="card-title" data-i18n="eval_clips_t">Бичлэгүүд</div>
+    <div id="evalClipsList" class="text-muted text-sm" data-i18n="loading">Уншиж байна…</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" data-i18n="eval_results_t">Сүүлийн үр дүн</div>
+    <div id="evalResults" class="text-muted text-sm" data-i18n="eval_no_results">Үнэлгээ ажиллаагүй байна</div>
+  </div>
+</div>
+
+<script src="/static/app.js?v=2026-04-28-eval"></script>
 </body>
 </html>

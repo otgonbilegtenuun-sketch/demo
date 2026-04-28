@@ -75,6 +75,37 @@ def init_db():
             timestamp    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS classroom_seats (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            class_name  TEXT    NOT NULL DEFAULT 'Class A',
+            student_id  INTEGER,
+            x1          INTEGER NOT NULL,
+            y1          INTEGER NOT NULL,
+            x2          INTEGER NOT NULL,
+            y2          INTEGER NOT NULL,
+            updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (student_id) REFERENCES students(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS app_config (
+            key         TEXT PRIMARY KEY,
+            value       TEXT NOT NULL,
+            updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS bullying_incidents (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            primary_signal      TEXT    NOT NULL,
+            concurrent_signals  TEXT,
+            involved_names      TEXT,
+            score               REAL    NOT NULL,
+            duration_s          REAL,
+            reviewed            INTEGER DEFAULT 0,
+            review_outcome      TEXT,
+            video_clip_path     TEXT
+        );
+
         CREATE TABLE IF NOT EXISTS users (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
             username      TEXT    NOT NULL UNIQUE,
@@ -88,8 +119,31 @@ def init_db():
     """)
     conn.commit()
     _migrate_alerts(conn)
+    _migrate_bullying_incidents(conn)
+    _migrate_students_profile(conn)
     _seed_demo_data(conn)
     _seed_demo_users(conn)
+
+
+def _migrate_bullying_incidents(conn: sqlite3.Connection):
+    """Add video_clip_path column to existing bullying_incidents tables."""
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(bullying_incidents)").fetchall()]
+    if cols and "video_clip_path" not in cols:
+        conn.execute("ALTER TABLE bullying_incidents ADD COLUMN video_clip_path TEXT")
+        conn.commit()
+        print("[Mergen AI] Migrated bullying_incidents: added video_clip_path")
+
+
+def _migrate_students_profile(conn: sqlite3.Connection):
+    """Add per-student behavior-profile flags (IEP/ADHD/etc)."""
+    cols = [c[1] for c in conn.execute("PRAGMA table_info(students)").fetchall()]
+    if "attention_disabled" not in cols:
+        conn.execute("ALTER TABLE students ADD COLUMN attention_disabled INTEGER DEFAULT 0")
+    if "distress_disabled" not in cols:
+        conn.execute("ALTER TABLE students ADD COLUMN distress_disabled INTEGER DEFAULT 0")
+    if "profile_note" not in cols:
+        conn.execute("ALTER TABLE students ADD COLUMN profile_note TEXT")
+    conn.commit()
 
 
 def _migrate_alerts(conn: sqlite3.Connection):
@@ -243,6 +297,95 @@ def save_unknown_alert(alert_type: str = "unknown_person"):
         ("Unknown", alert_type),
     )
     conn.commit()
+
+
+def save_bullying_incident(primary_signal: str, concurrent_signals: list,
+                           involved_names: list, score: float,
+                           duration_s: float) -> int:
+    """Insert a bullying-incident flag for human review."""
+    conn = get_db()
+    cur = conn.execute(
+        """INSERT INTO bullying_incidents
+           (primary_signal, concurrent_signals, involved_names, score, duration_s)
+           VALUES (?, ?, ?, ?, ?)""",
+        (
+            primary_signal,
+            ",".join(concurrent_signals or []),
+            ",".join(involved_names or []),
+            float(score),
+            float(duration_s),
+        ),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_recent_bullying_incidents(since_id: int = 0, limit: int = 50):
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT id, timestamp, primary_signal, concurrent_signals,
+                  involved_names, score, duration_s, reviewed, review_outcome
+           FROM bullying_incidents
+           WHERE id > ?
+           ORDER BY id DESC LIMIT ?""",
+        (since_id, limit),
+    ).fetchall()
+    return [
+        {
+            **dict(r),
+            "concurrent_signals": [s for s in (r["concurrent_signals"] or "").split(",") if s],
+            "involved_names":     [n for n in (r["involved_names"]     or "").split(",") if n],
+        }
+        for r in rows
+    ]
+
+
+def get_bullying_stats():
+    conn = get_db()
+    today = date.today().isoformat()
+    today_ct = conn.execute(
+        "SELECT COUNT(*) FROM bullying_incidents WHERE date(timestamp)=?", (today,)
+    ).fetchone()[0]
+    week_ct = conn.execute(
+        "SELECT COUNT(*) FROM bullying_incidents WHERE timestamp >= datetime('now','-7 days')"
+    ).fetchone()[0]
+    pending = conn.execute(
+        "SELECT COUNT(*) FROM bullying_incidents WHERE reviewed=0"
+    ).fetchone()[0]
+    by_signal = conn.execute(
+        """SELECT primary_signal, COUNT(*) AS n
+           FROM bullying_incidents
+           WHERE timestamp >= datetime('now','-7 days')
+           GROUP BY primary_signal ORDER BY n DESC"""
+    ).fetchall()
+    return {
+        "today":           today_ct,
+        "week":            week_ct,
+        "pending_review":  pending,
+        "by_signal_week":  [dict(r) for r in by_signal],
+    }
+
+
+def update_bullying_clip_path(incident_id: int, path: str) -> bool:
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE bullying_incidents SET video_clip_path=? WHERE id=?",
+        (path, incident_id),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def review_bullying_incident(incident_id: int, outcome: str) -> bool:
+    """Mark an incident as reviewed. outcome should be one of:
+       confirmed | false_positive | inconclusive."""
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE bullying_incidents SET reviewed=1, review_outcome=? WHERE id=?",
+        (outcome, incident_id),
+    )
+    conn.commit()
+    return cur.rowcount > 0
 
 
 def log_uniform(student_id: int, student_name: str, is_wearing: bool):
@@ -601,3 +744,158 @@ def reset_today_data():
                 (s["id"], s["name"], is_att, str(offset)),
             )
     conn.commit()
+
+
+# ── Seat map ──────────────────────────────────────────────────────────────────
+
+def get_seat_map(class_name: str = "Class A"):
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT s.id, s.class_name, s.student_id, s.x1, s.y1, s.x2, s.y2,
+                  st.name AS student_name
+           FROM classroom_seats s
+           LEFT JOIN students st ON st.id = s.student_id
+           WHERE s.class_name = ?
+           ORDER BY s.id""",
+        (class_name,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def replace_seat_map(class_name: str, seats: list):
+    """Atomically replace the seat map for a classroom.
+       seats = [{student_id, x1, y1, x2, y2}, ...]"""
+    conn = get_db()
+    conn.execute("DELETE FROM classroom_seats WHERE class_name=?", (class_name,))
+    for s in seats:
+        conn.execute(
+            """INSERT INTO classroom_seats
+               (class_name, student_id, x1, y1, x2, y2)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (class_name, s.get("student_id"),
+             int(s["x1"]), int(s["y1"]), int(s["x2"]), int(s["y2"])),
+        )
+    conn.commit()
+
+
+def clear_seat_map(class_name: str = "Class A"):
+    conn = get_db()
+    conn.execute("DELETE FROM classroom_seats WHERE class_name=?", (class_name,))
+    conn.commit()
+
+
+# ── Per-student behavior profile ──────────────────────────────────────────────
+
+def update_student_profile(student_id: int, *,
+                           attention_disabled: bool = None,
+                           distress_disabled: bool = None,
+                           profile_note: str = None) -> bool:
+    sets, vals = [], []
+    if attention_disabled is not None:
+        sets.append("attention_disabled=?"); vals.append(1 if attention_disabled else 0)
+    if distress_disabled is not None:
+        sets.append("distress_disabled=?");  vals.append(1 if distress_disabled else 0)
+    if profile_note is not None:
+        sets.append("profile_note=?");       vals.append(profile_note)
+    if not sets:
+        return False
+    vals.append(student_id)
+    conn = get_db()
+    cur = conn.execute(
+        f"UPDATE students SET {', '.join(sets)} WHERE id=?", vals,
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def get_student_profile(student_id: int):
+    conn = get_db()
+    row = conn.execute(
+        """SELECT id, name, class_name,
+                  COALESCE(attention_disabled,0) AS attention_disabled,
+                  COALESCE(distress_disabled,0)  AS distress_disabled,
+                  profile_note
+           FROM students WHERE id=?""",
+        (student_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_attention_disabled_ids() -> set:
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id FROM students WHERE COALESCE(attention_disabled,0)=1"
+    ).fetchall()
+    return {r["id"] for r in rows}
+
+
+# ── App config (key/value) ────────────────────────────────────────────────────
+
+def get_config(key: str, default: str = None):
+    conn = get_db()
+    row = conn.execute("SELECT value FROM app_config WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_config(key: str, value: str):
+    conn = get_db()
+    conn.execute(
+        """INSERT INTO app_config (key, value) VALUES (?, ?)
+           ON CONFLICT(key) DO UPDATE SET value=excluded.value,
+                                          updated_at=CURRENT_TIMESTAMP""",
+        (key, str(value)),
+    )
+    conn.commit()
+
+
+# ── Data retention / purge ────────────────────────────────────────────────────
+
+def purge_old_data(retention_days: int) -> dict:
+    """Delete rows older than retention_days from all time-series tables.
+       Returns counts deleted per table."""
+    conn = get_db()
+    cutoff = f"datetime('now','-{int(retention_days)} days')"
+    counts = {}
+    for table, ts_col in [
+        ("attention_log",      "timestamp"),
+        ("alerts",             "timestamp"),
+        ("uniform_log",        "timestamp"),
+        ("bullying_incidents", "timestamp"),
+        ("attendance",         "arrived_at"),
+    ]:
+        cur = conn.execute(f"DELETE FROM {table} WHERE {ts_col} < {cutoff}")
+        counts[table] = cur.rowcount
+    conn.commit()
+    return counts
+
+
+# ── Threshold-tuning suggestion (from review feedback) ────────────────────────
+
+def get_review_stats_by_signal():
+    """For each primary_signal, count confirmed vs false_positive reviews and
+       compute a precision-like score and a suggested threshold delta."""
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT primary_signal,
+                  SUM(CASE WHEN review_outcome='confirmed'      THEN 1 ELSE 0 END) AS confirmed,
+                  SUM(CASE WHEN review_outcome='false_positive' THEN 1 ELSE 0 END) AS false_pos,
+                  SUM(CASE WHEN review_outcome='inconclusive'   THEN 1 ELSE 0 END) AS inconc,
+                  AVG(CASE WHEN review_outcome='confirmed'      THEN score END)    AS avg_score_conf,
+                  AVG(CASE WHEN review_outcome='false_positive' THEN score END)    AS avg_score_fp,
+                  COUNT(*)                                                          AS reviewed
+           FROM bullying_incidents
+           WHERE reviewed=1
+           GROUP BY primary_signal"""
+    ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        total = max((d["confirmed"] or 0) + (d["false_pos"] or 0), 1)
+        d["precision"] = round((d["confirmed"] or 0) / total, 3)
+        # Heuristic suggestion: midpoint between false-positive and confirmed average score.
+        if d["avg_score_fp"] is not None and d["avg_score_conf"] is not None:
+            d["suggested_threshold"] = round((d["avg_score_fp"] + d["avg_score_conf"]) / 2, 2)
+        else:
+            d["suggested_threshold"] = None
+        out.append(d)
+    return out

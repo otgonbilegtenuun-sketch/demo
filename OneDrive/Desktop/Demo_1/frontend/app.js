@@ -6,6 +6,43 @@ const I18N = {
   mn: {
     nav_home:'Нүүр', nav_enroll:'Бүртгэл', nav_monitor:'Хяналт',
     nav_students:'Оюутнууд',
+    nav_incidents:'Хэргийн жагсаалт',
+    inc_h1:'Хэргийн жагсаалт',
+    inc_sub:'AI нь зан үйлийн загвараар сэжиглэсэн хэргүүд. Видео бичлэг үзээд багш баталгаажуулна. Энэ нь шийдвэр гаргах хэрэгсэл биш — зөвхөн анхааруулга.',
+    inc_today:'Өнөөдөр', inc_week:'7 хоногт', inc_pending:'Хүлээгдэж буй', inc_top_sig:'Гол дохио',
+    inc_detect_on:'Илрүүлэгч идэвхтэй',
+    inc_disclaimer_t:'Анхаарал:',
+    inc_disclaimer:'Энэ систем зөвхөн орон зайн ба сэтгэлийн илрэлийн загварыг хүний хяналтад шилжүүлдэг. Аль ч хэрэг бодит дээрэлхэлт гэдгийг баталгаажуулах боломжгүй — багш видеог үзэж шийдвэрлэнэ.',
+    inc_f_pending:'Хүлээгдэж буй', inc_f_all:'Бүгд',
+    nav_seats:'Суудал', nav_admin_cfg:'Тохиргоо',
+    seats_h1:'Суудлын зураглал', seats_sub:'Камераас зураг авч суудал тэмдэглэн оюутан хуваарилна.',
+    seats_snap:'Зураг шинэчлэх', seats_clear:'Бүгд устгах', seats_save:'Хадгалах',
+    seats_help_t:'Заавар:', seats_help:'Зураг дээр дөрвөлжин зурж, оюутан сонгоно. Дөрвөлжин дээр товшиж устгана.',
+    seats_list:'Тэмдэглэсэн суудлууд', seats_none:'Хараахан байхгүй',
+    admin_h1:'Тохиргоо', admin_sub:'Илрүүлэгч, өгөгдөл хадгалах, оюутны профайл',
+    admin_flags:'Илрүүлэгчийн флагууд',
+    flag_uniform:'Дүрэмт хувцас (HSV — найдвартай биш)',
+    flag_unknown:'Танигдаагүй царай (худал дохио)',
+    flag_phone:'Утас (шалгалтад)',
+    flag_pose:'Биеийн дохио (гар өргөх / нугарах / гар хүрэх)',
+    admin_retention:'Өгөгдөл хадгалах хугацаа', admin_days:'хоног', btn_save:'Хадгалах',
+    admin_purge_now:'Одоо цэвэрлэх',
+    admin_profiles:'Оюутны хувь профайл',
+    admin_profiles_sub:'ADHD / IEP оюутнуудад анхаарлын дохио бүртгэхгүй байх.',
+    admin_threshold:'Босгоны зөвлөмж',
+    nav_eval:'Үнэлгээ',
+    eval_h1:'Үнэлгээ — бодит датан дээр шалгах',
+    eval_sub:'Бодит ангиас бичлэг авч, шошго өгч, илрүүлэгчийг шалгана. Энэ өгөгдөлгүйгээр босго тохируулах нь зөвхөн таамаг.',
+    eval_warn_t:'Анхаар:',
+    eval_warn:'Бичих үед камер ажиллаж байх ёстой. Үнэлгээ ажиллах үед камер түр зогсоно.',
+    eval_record_t:'Бичлэг авах', eval_seconds:'секунд',
+    eval_rec_start:'Бичлэг эхлүүлэх', eval_rec_stop:'Зогсоох',
+    eval_run_t:'Үнэлгээ ажиллуулах',
+    eval_run_sub:'Шошготой бичлэг бүр дээр илрүүлэгчийг ажиллуулж precision / recall гаргана.',
+    eval_run_btn:'Үнэлгээ ажиллуулах',
+    eval_clips_t:'Бичлэгүүд',
+    eval_results_t:'Сүүлийн үр дүн',
+    eval_no_results:'Үнэлгээ ажиллаагүй байна',
     nav_teacher:'Багш', nav_teacher_dash:'Самбар', nav_parent:'Эцэг эх', nav_admin:'Удирдлага',
     nav_about:'Бидний тухай',
     nav_sections:'Хэсгүүд',
@@ -143,6 +180,43 @@ const I18N = {
   en: {
     nav_home:'Home', nav_enroll:'Enroll', nav_monitor:'Monitor',
     nav_students:'Students',
+    nav_incidents:'Incidents',
+    inc_h1:'Incident review',
+    inc_sub:'Behavior patterns flagged by AI for human review. Watch the clip and confirm or dismiss. This is not a verdict — only a prompt for review.',
+    inc_today:'Today', inc_week:'7 days', inc_pending:'Pending review', inc_top_sig:'Top signal',
+    inc_detect_on:'Detector enabled',
+    inc_disclaimer_t:'Note:',
+    inc_disclaimer:'This system surfaces spatial and affective patterns for human review. No flag confirms actual bullying — staff must watch the clip and decide.',
+    inc_f_pending:'Pending', inc_f_all:'All',
+    nav_seats:'Seats', nav_admin_cfg:'Settings',
+    seats_h1:'Classroom seat map', seats_sub:'Snap a frame from the camera, mark seats and assign students. Identity becomes a lookup.',
+    seats_snap:'Refresh snapshot', seats_clear:'Clear all', seats_save:'Save',
+    seats_help_t:'How to:', seats_help:'Drag a rectangle on the image, then pick a student. Click a rectangle to delete it.',
+    seats_list:'Seats', seats_none:'No seats yet',
+    admin_h1:'Settings', admin_sub:'Detector flags, retention, per-student profiles',
+    admin_flags:'Detector flags',
+    flag_uniform:'Uniform (HSV — unreliable)',
+    flag_unknown:'Unknown-face exam alert (noisy)',
+    flag_phone:'Phone detection (exams)',
+    flag_pose:'Pose signals (raised arm / lean / wrist reach)',
+    admin_retention:'Retention window', admin_days:'days', btn_save:'Save',
+    admin_purge_now:'Purge now',
+    admin_profiles:'Per-student profiles',
+    admin_profiles_sub:'ADHD / IEP students: skip attention/distress alerts.',
+    admin_threshold:'Threshold suggestion (from reviews)',
+    nav_eval:'Eval',
+    eval_h1:'Eval — validate against real data',
+    eval_sub:'Record real classroom clips, label them, and run the detector. Without this data, threshold tuning is just guessing.',
+    eval_warn_t:'Note:',
+    eval_warn:'Camera must be running to record. The live camera pauses while eval runs.',
+    eval_record_t:'Record clip', eval_seconds:'seconds',
+    eval_rec_start:'Start recording', eval_rec_stop:'Stop',
+    eval_run_t:'Run eval',
+    eval_run_sub:'Runs the detector against every labeled clip and prints precision / recall.',
+    eval_run_btn:'Run evaluation',
+    eval_clips_t:'Clips',
+    eval_results_t:'Latest results',
+    eval_no_results:'Never run yet',
     nav_teacher:'Teacher', nav_teacher_dash:'Dashboard', nav_parent:'Parent', nav_admin:'Admin',
     nav_about:'About',
     nav_sections:'Sections',
@@ -293,6 +367,11 @@ const S = {
   user:          null,
   token:         localStorage.getItem('mergen_token') || null,
   pendingRole:   null,
+  incFilter:     'pending',
+  incTimer:      null,
+  incBadgeTimer: null,
+  evalTimer:     null,
+  evalWasRecording: false,
 };
 
 // ── Translation helpers ──────────────────────────────────────────────────────
@@ -552,9 +631,13 @@ async function doSignup() {
 
 // ── Routing ──────────────────────────────────────────────────────────────────
 function go(e, path) {
-  if (typeof e.preventDefault === 'function') e.preventDefault();
+  if (e && typeof e.preventDefault === 'function') e.preventDefault();
   if (window.location.pathname === path) return;
-  clearInterval(S.pollTimer); clearInterval(S.monTimer);
+  clearInterval(S.pollTimer);
+  clearInterval(S.monTimer);
+  clearInterval(S.incTimer);
+  clearInterval(S.evalTimer);
+  S.pollTimer = S.monTimer = S.incTimer = S.evalTimer = null;
   if (window.location.pathname === '/monitor') _setVideoSrc(false);
   history.pushState({}, '', path);
   showPage(path);
@@ -581,9 +664,13 @@ function showPage(path) {
     '/students':           ['page-students',      '/students'],
     '/dashboard/teacher':  ['page-teacher',        '/dashboard/teacher'],
     '/dashboard/parent':   ['page-parent',         '/dashboard/parent'],
+    '/incidents':          ['page-incidents',     '/incidents'],
+    '/seats':              ['page-seats',         '/seats'],
+    '/admin':              ['page-admin',         '/admin'],
+    '/eval':               ['page-eval',          '/eval'],
   };
 
-  const protectedPaths = ['/enroll','/monitor','/students','/dashboard/teacher','/dashboard/parent'];
+  const protectedPaths = ['/enroll','/monitor','/students','/dashboard/teacher','/dashboard/parent','/incidents','/seats','/admin','/eval'];
   if (!S.user && protectedPaths.includes(path)) {
     history.replaceState({}, '', '/landing');
     document.getElementById('page-landing')?.classList.add('active');
@@ -596,7 +683,7 @@ function showPage(path) {
     showPage(fallback);
     return;
   }
-  if (['/students','/enroll','/monitor','/dashboard/teacher'].includes(path) && S.user?.role === 'parent') {
+  if (['/students','/enroll','/monitor','/dashboard/teacher','/incidents','/seats','/admin','/eval'].includes(path) && S.user?.role === 'parent') {
     history.replaceState({}, '', '/dashboard/parent');
     showPage('/dashboard/parent');
     return;
@@ -629,6 +716,10 @@ function showPage(path) {
   if (path === '/monitor')           initMonitor();
   if (path === '/dashboard/teacher') initTeacher();
   if (path === '/dashboard/parent')  initParent();
+  if (path === '/incidents')         initIncidents();
+  if (path === '/seats')             initSeats();
+  if (path === '/admin')             initAdmin();
+  if (path === '/eval')              initEval();
 }
 
 // ── API helper ───────────────────────────────────────────────────────────────
@@ -1500,4 +1591,618 @@ loadUser().then(() => {
   } else {
     showPage(path);
   }
+  if (role !== 'parent') startIncidentBadgePolling();
 });
+
+// ═════════════════════ INCIDENT REVIEW QUEUE ════════════════════════════════
+
+const INC_SIGNAL_LABELS = {
+  proximity_cluster: { mn: 'Бөөгнөрөл',          en: 'Crowd cluster' },
+  close_pair:        { mn: 'Ойр зайтай хос',     en: 'Close pair' },
+  sudden_motion:     { mn: 'Гэнэтийн хөдөлгөөн', en: 'Sudden motion' },
+  distress_face:     { mn: 'Сэтгэлийн илрэл',    en: 'Distress face' },
+  raised_arm:        { mn: 'Гар өргөсөн',        en: 'Raised arm' },
+  aggressive_lean:   { mn: 'Хэт нугарсан биеийн байрлал', en: 'Aggressive lean' },
+  wrist_reach:       { mn: 'Гар хүрсэн',         en: 'Wrist reach' },
+};
+
+function incSignalLabel(sig) {
+  const L = INC_SIGNAL_LABELS[sig];
+  if (!L) return sig;
+  return L[S.lang] || L.en;
+}
+
+function fmtIncidentTime(ts) {
+  // SQLite timestamps come back as 'YYYY-MM-DD HH:MM:SS' in UTC by default.
+  const d = new Date(ts.replace(' ', 'T') + 'Z');
+  if (isNaN(d)) return ts;
+  return d.toLocaleString(S.lang === 'mn' ? 'mn-MN' : 'en-US', {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+}
+
+function setIncFilter(f) {
+  S.incFilter = f;
+  document.getElementById('incFilterPending').classList.toggle('btn-secondary', f !== 'pending');
+  document.getElementById('incFilterAll').classList.toggle('btn-secondary',     f !== 'all');
+  refreshIncidents();
+}
+
+async function toggleBullyingDetector(enabled) {
+  try {
+    await api('POST', '/api/bullying/config', { enabled });
+    toast(enabled ? 'Detector enabled' : 'Detector disabled', 'info');
+  } catch (e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+async function reviewIncident(id, outcome) {
+  try {
+    await api('POST', `/api/bullying/${id}/review`, { outcome });
+    refreshIncidents();
+    refreshIncidentBadge();
+  } catch (e) { toast('Review failed: ' + e.message, 'error'); }
+}
+
+function renderIncidentCard(inc) {
+  const score   = inc.score || 0;
+  const sClass  = score >= 0.75 ? 'high' : score >= 0.55 ? 'med' : 'low';
+  const reviewed = inc.reviewed === 1 || inc.reviewed === true;
+  const outcomeClass = reviewed && inc.review_outcome
+    ? `reviewed reviewed-${inc.review_outcome.replace('_','-')}` : '';
+
+  const namesHtml = (inc.involved_names && inc.involved_names.length)
+    ? inc.involved_names.map(n => `<strong>${n}</strong>`).join(', ')
+    : `<span class="text-muted">${S.lang==='mn'?'Танигдаагүй':'Unknown'}</span>`;
+
+  const concurrentTags = (inc.concurrent_signals || [])
+    .map(s => `<span class="inc-signal-tag secondary">${incSignalLabel(s)}</span>`).join('');
+
+  const clipHtml = inc.video_clip_path
+    ? `<video src="${inc.video_clip_path}" controls preload="metadata" muted playsinline></video>`
+    : `<div class="inc-noclip">${S.lang==='mn'?'Видео бичлэг бэлтгэгдэж байна…':'Clip pending…'}</div>`;
+
+  const actionsHtml = reviewed
+    ? `<div class="text-sm text-muted">${S.lang==='mn'?'Шийдвэрлэгдсэн':'Reviewed'}: <strong>${inc.review_outcome}</strong></div>`
+    : `<div class="inc-actions">
+        <button class="btn btn-sm btn-danger"
+                onclick="reviewIncident(${inc.id},'confirmed')">
+          ${S.lang==='mn'?'Батлах':'Confirm'}
+        </button>
+        <button class="btn btn-sm" style="background:#ECFDF5;color:var(--success);border:1px solid #A7F3D0"
+                onclick="reviewIncident(${inc.id},'false_positive')">
+          ${S.lang==='mn'?'Худал дохио':'False positive'}
+        </button>
+        <button class="btn btn-sm btn-secondary"
+                onclick="reviewIncident(${inc.id},'inconclusive')">
+          ${S.lang==='mn'?'Тодорхойгүй':'Inconclusive'}
+        </button>
+       </div>`;
+
+  return `
+    <div class="card inc-card ${outcomeClass}">
+      ${clipHtml}
+      <div class="inc-meta">
+        <div class="inc-row">
+          <span class="inc-signal-tag">${incSignalLabel(inc.primary_signal)}</span>
+          ${concurrentTags}
+        </div>
+        <div class="inc-row">
+          <span class="inc-score ${sClass}">${(score*100).toFixed(0)}%</span>
+          <span class="text-muted text-sm">${S.lang==='mn'?'итгэлийн оноо':'confidence'}</span>
+          <span class="text-muted text-sm">·</span>
+          <span class="text-sm">${(inc.duration_s||0).toFixed(1)}s</span>
+        </div>
+        <div class="text-sm">
+          ${S.lang==='mn'?'Холбогдсон:':'Involved:'} ${namesHtml}
+        </div>
+        <div class="text-muted text-sm">${fmtIncidentTime(inc.timestamp)}</div>
+        ${actionsHtml}
+      </div>
+    </div>`;
+}
+
+async function refreshIncidents() {
+  const list = document.getElementById('incList');
+  if (!list) return;
+  let rows = await api('GET', '/api/bullying/recent?limit=80').catch(() => []);
+  if (S.incFilter === 'pending') rows = rows.filter(r => !(r.reviewed === 1 || r.reviewed === true));
+  if (!rows.length) {
+    list.innerHTML = `<p class="text-muted text-sm">${S.lang==='mn'?'Хэрэг олдсонгүй':'No incidents'}</p>`;
+    return;
+  }
+  list.innerHTML = rows.map(renderIncidentCard).join('');
+}
+
+async function refreshIncidentStats() {
+  const s = await api('GET', '/api/bullying/stats').catch(() => null);
+  if (!s) return;
+  const setT = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setT('incToday', s.today);
+  setT('incWeek', s.week);
+  setT('incPending', s.pending_review);
+  const top = (s.by_signal_week && s.by_signal_week[0]) ? s.by_signal_week[0].primary_signal : null;
+  setT('incTopSig', top ? incSignalLabel(top) : '—');
+}
+
+async function refreshIncidentBadge() {
+  if (!S.user || S.user.role === 'parent') return;
+  const s = await api('GET', '/api/bullying/stats').catch(() => null);
+  if (!s) return;
+  ['navIncidentBadge', 'navIncidentBadgeAdmin'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (s.pending_review > 0) {
+      el.style.display = 'inline-flex';
+      el.textContent = String(s.pending_review);
+    } else {
+      el.style.display = 'none';
+    }
+  });
+}
+
+async function loadIncDetectorState() {
+  const s = await api('GET', '/api/bullying/config').catch(() => null);
+  const t = document.getElementById('incEnabledToggle');
+  if (s && t) t.checked = !!s.enabled;
+}
+
+function initIncidents() {
+  if (S.incTimer) { clearInterval(S.incTimer); S.incTimer = null; }
+  // Ensure page is visible even if APIs are slow
+  const list = document.getElementById('incList');
+  if (list && !list.children.length) {
+    list.innerHTML = `<p class="text-muted text-sm">${S.lang==='mn'?'Уншиж байна…':'Loading…'}</p>`;
+  }
+  setIncFilter(S.incFilter || 'pending');   // sets button styles + triggers first refresh
+  loadIncDetectorState();
+  refreshIncidentStats();
+  S.incTimer = setInterval(() => {
+    refreshIncidentStats();
+    refreshIncidents();
+  }, 6000);
+}
+
+// Background badge poll once user is logged in
+function startIncidentBadgePolling() {
+  if (S.incBadgeTimer) return;
+  refreshIncidentBadge();
+  S.incBadgeTimer = setInterval(refreshIncidentBadge, 15000);
+}
+
+// ═════════════════════ SEAT MAP EDITOR ═════════════════════════════════════════
+
+const SEATS = {
+  img:        null,
+  canvas:     null,
+  ctx:        null,
+  scale:      { x: 1, y: 1 },
+  list:       [],
+  drag:       null,
+  students:   [],
+};
+
+async function initSeats() {
+  SEATS.img    = document.getElementById('seatsImg');
+  SEATS.canvas = document.getElementById('seatsCanvas');
+  SEATS.ctx    = SEATS.canvas.getContext('2d');
+
+  SEATS.canvas.onmousedown = onSeatDragStart;
+  SEATS.canvas.onmousemove = onSeatDragMove;
+  SEATS.canvas.onmouseup   = onSeatDragEnd;
+  SEATS.canvas.onmouseleave= onSeatDragCancel;
+  SEATS.canvas.onclick     = onSeatClick;
+
+  await seatsRefreshSnapshot();
+  await seatsLoadStudents();
+  await seatsLoad();
+  drawSeats();
+  renderSeatsList();
+}
+
+async function seatsLoadStudents() {
+  try { SEATS.students = await api('GET', '/api/students'); }
+  catch { SEATS.students = []; }
+}
+
+async function seatsRefreshSnapshot() {
+  const url = '/api/snapshot?t=' + Date.now();
+  await new Promise((resolve) => {
+    SEATS.img.onload = () => {
+      const rect = SEATS.img.getBoundingClientRect();
+      SEATS.canvas.width  = rect.width;
+      SEATS.canvas.height = rect.height;
+      SEATS.canvas.style.width  = rect.width  + 'px';
+      SEATS.canvas.style.height = rect.height + 'px';
+      SEATS.scale.x = SEATS.img.naturalWidth  / rect.width;
+      SEATS.scale.y = SEATS.img.naturalHeight / rect.height;
+      drawSeats();
+      resolve();
+    };
+    SEATS.img.onerror = () => {
+      toast(S.lang === 'mn' ? 'Камер ажиллахгүй байна' : 'Camera not running', 'error');
+      resolve();
+    };
+    SEATS.img.src = url;
+  });
+}
+
+async function seatsLoad() {
+  try { SEATS.list = await api('GET', '/api/seats?class_name=Class+A'); }
+  catch { SEATS.list = []; }
+}
+
+function camToDisplay(x, y) { return [x / SEATS.scale.x, y / SEATS.scale.y]; }
+function displayToCam(x, y) { return [Math.round(x * SEATS.scale.x), Math.round(y * SEATS.scale.y)]; }
+
+function drawSeats() {
+  const ctx = SEATS.ctx;
+  if (!ctx) return;
+  ctx.clearRect(0, 0, SEATS.canvas.width, SEATS.canvas.height);
+  SEATS.list.forEach((s, i) => {
+    const [dx1, dy1] = camToDisplay(s.x1, s.y1);
+    const [dx2, dy2] = camToDisplay(s.x2, s.y2);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = s.student_id ? '#10B981' : '#F59E0B';
+    ctx.fillStyle   = s.student_id ? 'rgba(16,185,129,.15)' : 'rgba(245,158,11,.15)';
+    ctx.fillRect(dx1, dy1, dx2 - dx1, dy2 - dy1);
+    ctx.strokeRect(dx1, dy1, dx2 - dx1, dy2 - dy1);
+    const label = (i + 1) + (s.student_name ? ' - ' + s.student_name : '');
+    ctx.font = '12px Outfit, sans-serif';
+    const tw = ctx.measureText(label).width + 8;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(dx1, dy1 - 18, tw, 16);
+    ctx.fillStyle = '#111';
+    ctx.fillText(label, dx1 + 4, dy1 - 6);
+  });
+  if (SEATS.drag) {
+    const d = SEATS.drag;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = '#2563EB';
+    ctx.strokeRect(d.x0, d.y0, d.x1 - d.x0, d.y1 - d.y0);
+    ctx.setLineDash([]);
+  }
+}
+
+function relMouse(e) {
+  const r = SEATS.canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+function onSeatDragStart(e) {
+  const m = relMouse(e);
+  SEATS.drag = { x0: m.x, y0: m.y, x1: m.x, y1: m.y };
+}
+function onSeatDragMove(e) {
+  if (!SEATS.drag) return;
+  const m = relMouse(e);
+  SEATS.drag.x1 = m.x; SEATS.drag.y1 = m.y;
+  drawSeats();
+}
+function onSeatDragCancel() { SEATS.drag = null; drawSeats(); }
+async function onSeatDragEnd() {
+  if (!SEATS.drag) return;
+  const d = SEATS.drag;
+  SEATS.drag = null;
+  const w = Math.abs(d.x1 - d.x0), h = Math.abs(d.y1 - d.y0);
+  if (w < 12 || h < 12) { drawSeats(); return; }
+  const x1 = Math.min(d.x0, d.x1), y1 = Math.min(d.y0, d.y1);
+  const x2 = Math.max(d.x0, d.x1), y2 = Math.max(d.y0, d.y1);
+  const [cx1, cy1] = displayToCam(x1, y1);
+  const [cx2, cy2] = displayToCam(x2, y2);
+  const sid = await pickStudent();
+  const student = SEATS.students.find(s => s.id === sid);
+  SEATS.list.push({
+    x1: cx1, y1: cy1, x2: cx2, y2: cy2,
+    student_id:   sid || null,
+    student_name: student ? student.name : null,
+  });
+  drawSeats();
+  renderSeatsList();
+}
+
+function onSeatClick(e) {
+  const m = relMouse(e);
+  const [cx, cy] = displayToCam(m.x, m.y);
+  const idx = SEATS.list.findIndex(s =>
+    cx >= s.x1 && cx <= s.x2 && cy >= s.y1 && cy <= s.y2);
+  if (idx < 0) return;
+  if (confirm(S.lang === 'mn' ? 'Энэ суудлыг устгах уу?' : 'Delete this seat?')) {
+    SEATS.list.splice(idx, 1);
+    drawSeats();
+    renderSeatsList();
+  }
+}
+
+function pickStudent() {
+  return new Promise(resolve => {
+    if (!SEATS.students.length) { resolve(null); return; }
+    const opts = SEATS.students
+      .map(s => s.id + ': ' + s.name + (s.class_name ? ' (' + s.class_name + ')' : ''))
+      .join('\n');
+    const prefix = S.lang === 'mn'
+      ? 'Оюутны ID-г оруулна уу (хоосон = хуваарилахгүй):\n\n'
+      : 'Student id (blank = leave unassigned):\n\n';
+    const ans = prompt(prefix + opts);
+    if (ans === null) { resolve(null); return; }
+    const id = parseInt(ans.trim(), 10);
+    resolve(Number.isFinite(id) ? id : null);
+  });
+}
+
+function renderSeatsList() {
+  const el = document.getElementById('seatsList');
+  if (!el) return;
+  if (!SEATS.list.length) {
+    el.innerHTML = '<p class="text-muted text-sm">' +
+      (S.lang === 'mn' ? 'Хараахан байхгүй' : 'No seats yet') + '</p>';
+    return;
+  }
+  el.innerHTML = SEATS.list.map((s, i) =>
+    '<div class="flex items-center gap8" style="padding:6px 0;border-bottom:1px solid var(--border)">' +
+      '<strong>#' + (i+1) + '</strong>' +
+      '<span>' + (s.student_name || (S.lang === 'mn' ? '(хуваарилаагүй)' : '(unassigned)')) + '</span>' +
+      '<span class="text-muted text-sm">[' + s.x1 + ',' + s.y1 + ' -> ' + s.x2 + ',' + s.y2 + ']</span>' +
+    '</div>'
+  ).join('');
+}
+
+async function seatsClearAll() {
+  if (!confirm(S.lang === 'mn' ? 'Бүх суудал устгах уу?' : 'Clear all seats?')) return;
+  SEATS.list = [];
+  drawSeats();
+  renderSeatsList();
+}
+
+async function seatsSaveAll() {
+  try {
+    const body = {
+      class_name: 'Class A',
+      seats: SEATS.list.map(s => ({
+        student_id: s.student_id || null,
+        x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2,
+      })),
+    };
+    const res = await api('POST', '/api/seats', body);
+    toast((S.lang === 'mn' ? 'Хадгаллаа: ' : 'Saved: ') + res.saved, 'success');
+    await seatsLoad();
+    drawSeats();
+    renderSeatsList();
+  } catch (e) {
+    toast('Save failed: ' + e.message, 'error');
+  }
+}
+
+// ═════════════════════ ADMIN CONFIG ═════════════════════════════════════════════
+
+async function initAdmin() {
+  try {
+    const flags = await api('GET', '/api/admin/flags');
+    document.getElementById('flagUniform').checked = !!flags.uniform_detect;
+    document.getElementById('flagUnknown').checked = !!flags.unknown_face_alert;
+    document.getElementById('flagPhone').checked   = !!flags.phone_detect;
+    const fp = document.getElementById('flagPose');
+    if (fp) fp.checked = !!flags.pose_signals;
+  } catch {}
+  try {
+    const r = await api('GET', '/api/admin/retention');
+    document.getElementById('retentionDays').value = r.days;
+  } catch {}
+  refreshThresholdAdvice();
+  refreshProfileList();
+}
+
+async function setFlag(name, value) {
+  try { await api('POST', '/api/admin/flags', { [name]: value }); }
+  catch (e) { toast('Flag failed: ' + e.message, 'error'); }
+}
+
+async function saveRetention() {
+  const days = parseInt(document.getElementById('retentionDays').value, 10);
+  if (!Number.isFinite(days) || days < 1) { toast('Invalid days', 'error'); return; }
+  try {
+    await api('POST', '/api/admin/retention', { days });
+    toast(S.lang === 'mn' ? 'Хадгаллаа' : 'Saved', 'success');
+  } catch (e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+async function purgeNow() {
+  if (!confirm(S.lang === 'mn' ? 'Хуучин өгөгдлийг устгах уу?' : 'Purge old data now?')) return;
+  try {
+    const r = await api('POST', '/api/admin/purge');
+    document.getElementById('purgeResult').textContent =
+      'OK | ' + r.days + 'd | rows=' + JSON.stringify(r.rows_deleted) + ' | clips=' + r.clips_deleted;
+  } catch (e) { toast('Purge failed: ' + e.message, 'error'); }
+}
+
+async function refreshThresholdAdvice() {
+  try {
+    const r = await api('GET', '/api/bullying/threshold-suggestion');
+    const rows = (r.by_signal || []).map(s =>
+      '<div>' + s.primary_signal + ': precision=' + s.precision +
+      ' (n=' + s.reviewed + ') -> suggested=' + (s.suggested_threshold !== null ? s.suggested_threshold : '-') + '</div>'
+    ).join('');
+    const noData = '<div class="text-muted">' + (S.lang === 'mn' ? 'Хангалттай review байхгүй' : 'No reviews yet') + '</div>';
+    document.getElementById('thresholdAdvice').innerHTML =
+      '<div>Current: <strong>' + r.current_threshold + '</strong></div>' +
+      (rows || noData) +
+      '<div class="text-muted text-sm" style="margin-top:8px">' + r.advice + '</div>';
+  } catch {}
+}
+
+async function refreshProfileList() {
+  let students;
+  try { students = await api('GET', '/api/students'); }
+  catch { students = []; }
+  const profiles = await Promise.all(students.map(async s => {
+    try { return await api('GET', '/api/students/' + s.id + '/profile'); }
+    catch { return Object.assign({}, s, { attention_disabled: 0, distress_disabled: 0 }); }
+  }));
+  const html = profiles.map(p =>
+    '<div class="flex items-center gap8" style="padding:8px 0;border-bottom:1px solid var(--border)">' +
+      '<strong style="width:160px">' + p.name + '</strong>' +
+      '<label class="flex items-center gap8">' +
+        '<input type="checkbox" ' + (p.attention_disabled ? 'checked' : '') +
+        ' onchange="setProfile(' + p.id + ', \'attention_disabled\', this.checked)">' +
+        '<span class="text-sm">' + (S.lang === 'mn' ? 'Анхаарлын дохио хаах' : 'Skip attention alerts') + '</span>' +
+      '</label>' +
+      '<label class="flex items-center gap8">' +
+        '<input type="checkbox" ' + (p.distress_disabled ? 'checked' : '') +
+        ' onchange="setProfile(' + p.id + ', \'distress_disabled\', this.checked)">' +
+        '<span class="text-sm">' + (S.lang === 'mn' ? 'Сэтгэл дохио хаах' : 'Skip distress alerts') + '</span>' +
+      '</label>' +
+    '</div>'
+  ).join('');
+  const empty = '<p class="text-muted text-sm">' + (S.lang === 'mn' ? 'Оюутан байхгүй' : 'No students') + '</p>';
+  document.getElementById('profileList').innerHTML = html || empty;
+}
+
+async function setProfile(studentId, key, value) {
+  try { await api('PATCH', '/api/students/' + studentId + '/profile', { [key]: value }); }
+  catch (e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+// ═════════════════════ EVAL WORKFLOW ════════════════════════════════════════════
+
+const EVAL_LABELS = ['fight','crowd_bully','normal','crowd_normal','note_passing'];
+
+async function initEval() {
+  if (S.evalTimer) { clearInterval(S.evalTimer); S.evalTimer = null; }
+  await refreshEvalStatus();
+  await refreshEvalClips();
+  await refreshEvalResults();
+  // Poll status while a recording is in progress
+  S.evalTimer = setInterval(refreshEvalStatus, 2000);
+}
+
+async function refreshEvalStatus() {
+  let s;
+  try { s = await api('GET', '/api/eval/record/status'); }
+  catch { s = { recording: false }; }
+  const startBtn = document.getElementById('evalRecStartBtn');
+  const stopBtn  = document.getElementById('evalRecStopBtn');
+  const status   = document.getElementById('evalRecStatus');
+  if (s.recording) {
+    if (startBtn) startBtn.style.display = 'none';
+    if (stopBtn)  stopBtn.style.display  = '';
+    if (status)   status.textContent =
+      (S.lang==='mn' ? 'Бичиж байна… ' : 'Recording… ') + s.elapsed_s + 's / ' + s.max_s + 's';
+  } else {
+    if (startBtn) startBtn.style.display = '';
+    if (stopBtn)  stopBtn.style.display  = 'none';
+    if (status)   status.textContent = '—';
+    // Recording just finished — refresh the clip list once
+    if (S.evalWasRecording) refreshEvalClips();
+  }
+  S.evalWasRecording = !!s.recording;
+}
+
+async function evalRecStart() {
+  const dur = parseInt(document.getElementById('evalRecDur').value, 10);
+  if (!Number.isFinite(dur) || dur < 5) { toast('Invalid duration', 'error'); return; }
+  try {
+    const r = await api('POST', '/api/eval/record/start', { duration_s: dur });
+    toast((S.lang==='mn' ? 'Эхэллээ: ' : 'Started: ') + r.filename, 'success');
+    refreshEvalStatus();
+  } catch (e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+async function evalRecStop() {
+  try { await api('POST', '/api/eval/record/stop'); refreshEvalStatus(); refreshEvalClips(); }
+  catch (e) { toast('Failed: ' + e.message, 'error'); }
+}
+
+async function refreshEvalClips() {
+  let clips;
+  try { clips = await api('GET', '/api/eval/clips'); }
+  catch { clips = []; }
+  const el = document.getElementById('evalClipsList');
+  if (!el) return;
+  if (!clips.length) {
+    el.innerHTML = '<p class="text-muted text-sm">' +
+      (S.lang==='mn'?'Бичлэг байхгүй':'No clips yet') + '</p>';
+    return;
+  }
+  el.innerHTML = clips.map(c => {
+    const opts = EVAL_LABELS.map(l =>
+      '<option value="' + l + '"' + (c.truth_label === l ? ' selected' : '') + '>' + l + '</option>'
+    ).join('');
+    const sizeKb = Math.round(c.size_bytes / 1024);
+    return (
+      '<div class="flex items-center gap8" style="padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">' +
+        '<video src="' + c.url + '" controls preload="metadata" muted ' +
+              'style="width:200px;aspect-ratio:4/3;background:#000;border-radius:6px"></video>' +
+        '<div class="flex" style="flex-direction:column;gap:4px;min-width:200px">' +
+          '<strong>' + c.filename + '</strong>' +
+          '<span class="text-muted text-sm">' + sizeKb + ' KB</span>' +
+        '</div>' +
+        '<select onchange="evalSetLabel(\'' + c.filename + '\', this.value)" ' +
+                'style="padding:6px;border:1px solid var(--border);border-radius:6px">' +
+          '<option value="">— ' + (S.lang==='mn'?'шошго':'label') + ' —</option>' +
+          opts +
+        '</select>' +
+        '<button class="btn btn-sm btn-danger" onclick="evalDeleteClip(\'' + c.filename + '\')">' +
+          (S.lang==='mn'?'Устгах':'Delete') +
+        '</button>' +
+      '</div>'
+    );
+  }).join('');
+}
+
+async function evalSetLabel(filename, label) {
+  if (!label) return;
+  try { await api('POST', '/api/eval/clips/' + encodeURIComponent(filename) + '/label', { truth_label: label }); }
+  catch (e) { toast('Label failed: ' + e.message, 'error'); }
+}
+
+async function evalDeleteClip(filename) {
+  if (!confirm(S.lang==='mn' ? 'Энэ бичлэгийг устгах уу?' : 'Delete this clip?')) return;
+  try { await api('DELETE', '/api/eval/clips/' + encodeURIComponent(filename)); refreshEvalClips(); }
+  catch (e) { toast('Delete failed: ' + e.message, 'error'); }
+}
+
+async function evalRun() {
+  const status = document.getElementById('evalRunStatus');
+  if (status) status.textContent = (S.lang==='mn' ? 'Ажиллаж байна… (хэдэн минут)' : 'Running… (a few minutes)');
+  try {
+    await api('POST', '/api/eval/run');
+    await refreshEvalResults();
+    if (status) status.textContent = (S.lang==='mn' ? 'Дуусав' : 'Done');
+  } catch (e) {
+    if (status) status.textContent = '';
+    toast('Eval failed: ' + e.message, 'error');
+  }
+}
+
+async function refreshEvalResults() {
+  let r;
+  try { r = await api('GET', '/api/eval/results'); }
+  catch { r = null; }
+  const el = document.getElementById('evalResults');
+  if (!el) return;
+  if (!r || r.never_run) {
+    el.innerHTML = '<p class="text-muted text-sm">' +
+      (S.lang==='mn'?'Үнэлгээ ажиллаагүй байна':'Never run yet') + '</p>';
+    return;
+  }
+  const s = r.summary || {};
+  const perClip = (r.per_clip || []).map(p =>
+    '<div style="padding:4px 0">' +
+      '<span style="font-family:monospace">' + (p.fired ? '[FIRE]' : '[----]') + '</span> ' +
+      '<strong>' + p.filename + '</strong> · truth=' + p.truth_label +
+      (p.fired ? ' · sig=' + p.primary_signal + ' · score=' + p.score : '') +
+    '</div>'
+  ).join('');
+  el.innerHTML =
+    '<div class="text-sm" style="margin-bottom:10px">' +
+      '<strong>' + (S.lang==='mn'?'Хугацаа: ':'Run at: ') + '</strong>' + r.run_at + ' · ' +
+      (r.n_clips || 0) + ' clips' +
+    '</div>' +
+    '<div class="g4 mb16" style="grid-template-columns:repeat(4,1fr);gap:10px">' +
+      '<div class="card stat-card"><div class="stat-val" style="color:var(--success)">' + (s.precision||0) + '</div><div class="stat-label">precision</div></div>' +
+      '<div class="card stat-card"><div class="stat-val" style="color:var(--accent)">' + (s.recall||0) + '</div><div class="stat-label">recall</div></div>' +
+      '<div class="card stat-card"><div class="stat-val" style="color:var(--danger)">' + (s.fpr||0) + '</div><div class="stat-label">false-positive rate</div></div>' +
+      '<div class="card stat-card"><div class="stat-val">' + (s.tp||0) + '/' + (s.fp||0) + '/' + (s.tn||0) + '/' + (s.fn||0) + '</div><div class="stat-label">TP/FP/TN/FN</div></div>' +
+    '</div>' +
+    '<div class="text-sm" style="font-family:monospace;background:var(--surface2);padding:10px;border-radius:6px">' + perClip + '</div>';
+}
