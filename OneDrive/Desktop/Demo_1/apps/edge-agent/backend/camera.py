@@ -21,6 +21,9 @@ import numpy as np
 from bullying_detector import BullyingDetector, distress_from_blendshapes
 from pose_analyzer import POSE_AVAILABLE, PoseAnalyzer
 from safety_detector import SafetyDetector
+from log_setup import get_logger
+
+log = get_logger(__name__)
 
 # Where incident video clips are written. Set by app.py via set_clips_dir().
 _CLIPS_DIR: Optional[str] = None
@@ -72,7 +75,7 @@ def _warm_deepface():
                 from deepface import DeepFace
                 DeepFace.build_model("ArcFace")
                 _deepface_ready = True
-                print("[DeepFace] ArcFace loaded")
+                log.info("[DeepFace] ArcFace loaded")
 
 
 _yolo_model = None
@@ -86,7 +89,7 @@ def _get_yolo():
             if _yolo_model is None:
                 from ultralytics import YOLO
                 _yolo_model = YOLO("yolov8n.pt")
-                print("[YOLO] yolov8n loaded")
+                log.info("[YOLO] yolov8n loaded")
     return _yolo_model
 
 
@@ -358,7 +361,7 @@ class CameraProcessor:
                         self._update_person_tracking(frame)
                         self._update_seat_occupancy(time.time())
                     except Exception as e:
-                        print(f"[camera] person track error: {e}")
+                        log.error(f"[camera] person track error: {e}")
 
                 # Pose runs on its own faster cadence so brief actions aren't
                 # missed (YOLO tracking happens once every 60 frames in BG mode)
@@ -368,12 +371,12 @@ class CameraProcessor:
                     try:
                         self._run_pose_on_tracks(frame, time.time())
                     except Exception as e:
-                        print(f"[camera] pose error: {e}")
+                        log.error(f"[camera] pose error: {e}")
 
                 try:
                     annotated, faces = self._process_frame(frame.copy(), landmarker)
                 except Exception as e:
-                    print(f"[camera] _process_frame error: {e}")
+                    log.error(f"[camera] _process_frame error: {e}")
                     time.sleep(0.05)
                     continue
 
@@ -398,7 +401,7 @@ class CameraProcessor:
                         self._update_phone_detection(frame, faces)
                         self._check_phone_alerts(now)
                     except Exception as e:
-                        print(f"[camera] YOLO phone error: {e}")
+                        log.error(f"[camera] YOLO phone error: {e}")
 
                 if (FEATURE_FLAGS.get("safety_monitor")
                         and FEATURE_FLAGS.get("object_safety_detect")
@@ -418,13 +421,13 @@ class CameraProcessor:
                     try:
                         self._handle_recognition(frame, faces, now)
                     except Exception as e:
-                        print(f"[camera] recognition error: {e}")
+                        log.error(f"[camera] recognition error: {e}")
                     last_recog = now
 
                 elapsed = time.time() - t_iter
                 time.sleep(max(0.0, 0.066 - elapsed))
         except Exception as e:
-            print(f"[camera] loop fatal error: {e}")
+            log.error(f"[camera] loop fatal error: {e}")
         finally:
             landmarker.close()
 
@@ -459,7 +462,7 @@ class CameraProcessor:
                         self._update_person_tracking(frame)
                         self._update_seat_occupancy(time.time())
                     except Exception as e:
-                        print(f"[camera] person track error: {e}")
+                        log.error(f"[camera] person track error: {e}")
 
                 # Pose runs on its own faster cadence so brief actions aren't
                 # missed (YOLO tracking happens once every 60 frames in BG mode)
@@ -469,12 +472,12 @@ class CameraProcessor:
                     try:
                         self._run_pose_on_tracks(frame, time.time())
                     except Exception as e:
-                        print(f"[camera] pose error: {e}")
+                        log.error(f"[camera] pose error: {e}")
 
                 try:
                     annotated, faces = self._process_frame(frame.copy(), landmarker)
                 except Exception as e:
-                    print(f"[camera] _process_frame error: {e}")
+                    log.error(f"[camera] _process_frame error: {e}")
                     time.sleep(0.05)
                     continue
 
@@ -498,7 +501,7 @@ class CameraProcessor:
                         self._update_phone_detection(frame, faces)
                         self._check_phone_alerts(now)
                     except Exception as e:
-                        print(f"[camera] YOLO phone error: {e}")
+                        log.error(f"[camera] YOLO phone error: {e}")
 
                 if (FEATURE_FLAGS.get("safety_monitor")
                         and FEATURE_FLAGS.get("object_safety_detect")
@@ -517,18 +520,18 @@ class CameraProcessor:
                     try:
                         self._handle_recognition(frame, faces, now)
                     except Exception as e:
-                        print(f"[camera] recognition error: {e}")
+                        log.error(f"[camera] recognition error: {e}")
                     last_recog = now
 
                 # Sleep only the remaining time to maintain 1x playback speed
                 elapsed = time.time() - t_iter
                 time.sleep(max(0.0, frame_delay - elapsed))
         except Exception as e:
-            print(f"[camera] file loop error: {e}")
+            log.error(f"[camera] file loop error: {e}")
         finally:
             landmarker.close()
             self._running = False
-            print("[camera] Video file processing complete")
+            log.info("[camera] Video file processing complete")
 
     # ── Continuous recording (for eval capture) ──────────────────────────────
 
@@ -613,9 +616,9 @@ class CameraProcessor:
         if self._pose_analyzer is None:
             try:
                 self._pose_analyzer = PoseAnalyzer(model_complexity=0)
-                print("[Pose] MediaPipe Pose loaded")
+                log.info("[Pose] MediaPipe Pose loaded")
             except Exception as e:
-                print(f"[Pose] init failed: {e}")
+                log.error(f"[Pose] init failed: {e}")
                 FEATURE_FLAGS["pose_signals"] = False
                 return
 
@@ -756,7 +759,7 @@ class CameraProcessor:
                 pose_resolver=self._resolve_track_pose,
             )
         except Exception as e:
-            print(f"[camera] bullying detector error: {e}")
+            log.error(f"[camera] bullying detector error: {e}")
 
     def _resolve_track_seat(self, tid: int) -> Optional[int]:
         bbox = self._tracked_persons.get(tid)
@@ -768,7 +771,7 @@ class CameraProcessor:
             try:
                 self.on_bullying_incident(event)
             except Exception as e:
-                print(f"[camera] on_bullying_incident error: {e}")
+                log.error(f"[camera] on_bullying_incident error: {e}")
 
     # ── Clip ring buffer ──────────────────────────────────────────────────────
 
@@ -793,7 +796,7 @@ class CameraProcessor:
                 name_resolver=self._resolve_track_name,
             )
         except Exception as e:
-            print(f"[camera] safety detector error: {e}")
+            log.error(f"[camera] safety detector error: {e}")
 
     def _update_safety_objects(self, frame: np.ndarray):
         try:
@@ -812,10 +815,39 @@ class CameraProcessor:
                     })
             self._safety_objects = objects
         except Exception as e:
-            print(f"[camera] safety object scan error: {e}")
+            log.error(f"[camera] safety object scan error: {e}")
 
     def _handle_read_failure(self):
+        """USB camera unplug or driver hiccup → attempt reconnect.
+
+        After 30 consecutive failed reads (~1 s at 30 fps), try to re-open
+        the capture device. After 60 failures (~2 s) escalate to a safety
+        event so the failure shows up in the review queue."""
         self._read_fail_count += 1
+
+        # First reconnect attempt at 30 failures, then every 90 (~3 s)
+        if self._read_fail_count == 30 or (
+            self._read_fail_count > 30 and (self._read_fail_count - 30) % 90 == 0
+        ):
+            try:
+                if self._cap is not None:
+                    try: self._cap.release()
+                    except Exception: pass
+                log.warning(f"[camera] reconnecting after {self._read_fail_count} failed reads")
+                cap = cv2.VideoCapture(0)
+                if cap.isOpened():
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                    cap.set(cv2.CAP_PROP_FPS, 15)
+                    self._cap = cap
+                    self._read_fail_count = 0
+                    log.info("[camera] reconnected")
+                    return
+                else:
+                    log.warning("[camera] reconnect failed; will retry")
+            except Exception as e:
+                log.error(f"[camera] reconnect error: {e}")
+
         if self._read_fail_count != 60:
             return
         self._emit_safety_event({
@@ -834,7 +866,7 @@ class CameraProcessor:
             try:
                 self.on_safety_incident(event)
             except Exception as e:
-                print(f"[camera] on_safety_incident error: {e}")
+                log.error(f"[camera] on_safety_incident error: {e}")
 
     def _push_clip_frame(self, frame: np.ndarray, ts: float):
         try:
@@ -855,7 +887,7 @@ class CameraProcessor:
         Returns absolute path on disk, or None on failure.
         """
         if _CLIPS_DIR is None:
-            print("[camera] clips dir not set; skipping clip dump")
+            log.info("[camera] clips dir not set; skipping clip dump")
             return None
 
         deadline = center_ts + post_s + 2.0
@@ -959,7 +991,7 @@ class CameraProcessor:
             if self._locked_id is not None and self._locked_id not in new_tracked:
                 self._locked_id = None
         except Exception as e:
-            print(f"[camera] person tracking error: {e}")
+            log.error(f"[camera] person tracking error: {e}")
 
     def lock_at_point(self, nx: float, ny: float) -> Optional[int]:
         """
@@ -1049,7 +1081,7 @@ class CameraProcessor:
                     pass   # single face failed — keep going
 
         except Exception as e:
-            print(f"[camera] recognition error: {e}")
+            log.error(f"[camera] recognition error: {e}")
             return
 
         matched_indices = self.on_recognition(face_data) or set() if face_data else set()
@@ -1062,7 +1094,7 @@ class CameraProcessor:
                     if name != "Unknown":
                         self.on_uniform(idx, name, f["uniform_on"])
                 except Exception as e:
-                    print(f"[camera] on_uniform error: {e}")
+                    log.error(f"[camera] on_uniform error: {e}")
 
             # Unknown faces are shown with green box — no separate alert needed
 
@@ -1304,5 +1336,5 @@ def process_enrollment_image(image_b64: str) -> Optional[np.ndarray]:
         return np.array(best["embedding"], dtype=np.float32)
 
     except Exception as e:
-        print(f"[camera] enroll image error: {e}")
+        log.error(f"[camera] enroll image error: {e}")
         return None

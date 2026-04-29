@@ -31,6 +31,8 @@ from camera import (
     set_clips_dir,
 )
 from database import get_all_students, delete_student
+from log_setup import get_logger
+log = get_logger(__name__)
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
@@ -146,8 +148,9 @@ def _on_faces_recognized(face_data: list) -> set:
             db.log_attention(student["id"], student["name"], attentive)
 
         if camera.exam_mode and sideways and not skip_attention:
-            db.save_alert(student["id"], student["name"], "suspicious_glance")
-            print(f"[ALERT] {student['name']} suspicious glance (sim={sim:.3f})")
+            if _should_emit_alert(student["name"], "suspicious_glance"):
+                db.save_alert(student["id"], student["name"], "suspicious_glance")
+                log.warning(f"[ALERT] {student['name']} suspicious glance (sim={sim:.3f})")
 
     return matched_indices
 
@@ -160,7 +163,7 @@ def _on_unknown_face(face_idx: int):
         return
     _last_unknown_alert = now
     db.save_unknown_alert("unknown_person")
-    print(f"[ALERT] Unknown person detected in exam mode (face slot #{face_idx})")
+    log.warning(f"[ALERT] Unknown person detected in exam mode (face slot #{face_idx})")
 
 
 _uniform_log_times: dict = {}   # face_idx -> last_log_timestamp
@@ -180,8 +183,28 @@ def _on_uniform(face_idx: int, student_name: str, is_wearing: bool):
         db.log_uniform(row["id"], student_name, is_wearing)
 
 
+# Per-student per-alert-type suppression window. A teacher can't act on a
+# duplicate "phone detected" alert every 8 seconds, so we collapse repeats
+# within ALERT_DEDUPE_S into a single row.
+ALERT_DEDUPE_S = 120.0
+_alert_last_seen: dict = {}   # (student_name, alert_type) -> timestamp
+
+
+def _should_emit_alert(name: str, alert_type: str) -> bool:
+    key = (name or "Unknown", alert_type)
+    now = time.time()
+    last = _alert_last_seen.get(key, 0.0)
+    if (now - last) < ALERT_DEDUPE_S:
+        return False
+    _alert_last_seen[key] = now
+    return True
+
+
 def _on_phone_suspect(name: str):
-    """Called when down-gaze threshold triggers a phone-use suspicion."""
+    """Called when down-gaze threshold triggers a phone-use suspicion.
+       Rate-limited to one row per student per ALERT_DEDUPE_S window."""
+    if not _should_emit_alert(name, "phone_detected"):
+        return
     conn = db.get_db()
     row  = conn.execute("SELECT id FROM students WHERE name=?", (name,)).fetchone()
     if row:
@@ -190,7 +213,7 @@ def _on_phone_suspect(name: str):
         first = db.get_first_student()
         if first:
             db.save_alert(first["id"], name, "phone_detected")
-    print(f"[ALERT] {name} phone/down-gaze detected")
+    log.warning(f"[ALERT] {name} phone/down-gaze detected")
 
 
 def _save_review_incident(event: dict, label: str = "INCIDENT") -> int:
@@ -222,7 +245,7 @@ def _on_bullying_incident(event: dict):
     try:
         _save_review_incident(event, "BULLYING")
     except Exception as e:
-        print(f"[BULLYING] save error: {e}")
+        log.error(f"[BULLYING] save error: {e}")
 
 
 def _on_safety_incident(event: dict):
@@ -230,7 +253,7 @@ def _on_safety_incident(event: dict):
     try:
         _save_review_incident(event, "SAFETY")
     except Exception as e:
-        print(f"[SAFETY] save error: {e}")
+        log.error(f"[SAFETY] save error: {e}")
 
 
 def _dump_incident_clip(incident_id: int, center_ts: float,
@@ -252,9 +275,9 @@ def _dump_incident_clip(incident_id: int, center_ts: float,
             final_name = os.path.basename(path)
         url = f"/clips/{final_name}"
         db.update_bullying_clip_path(incident_id, url)
-        print(f"[BULLYING] clip #{incident_id} → {url}")
+        log.info(f"[BULLYING] clip #{incident_id} → {url}")
     except Exception as e:
-        print(f"[BULLYING] clip dump error #{incident_id}: {e}")
+        log.error(f"[BULLYING] clip dump error #{incident_id}: {e}")
 
 
 camera.on_recognition       = _on_faces_recognized
@@ -312,7 +335,7 @@ def _save_safety_config(config: dict) -> dict:
 @app.on_event("startup")
 async def _startup():
     db.init_db()
-    print("[Mergen AI] Database ready")
+    log.info("[Mergen AI] Database ready")
 
     # Load persisted feature flags (overrides defaults baked into camera.py)
     for k in list(FEATURE_FLAGS.keys()):
@@ -332,9 +355,9 @@ async def _startup():
                 time.sleep(24 * 3600)
                 days = int(db.get_config("retention_days", "30"))
                 counts = db.purge_old_data(days)
-                print(f"[purge] retention={days}d rows={counts}")
+                log.info(f"[purge] retention={days}d rows={counts}")
             except Exception as e:
-                print(f"[purge] error: {e}")
+                log.error(f"[purge] error: {e}")
                 time.sleep(3600)
     threading.Thread(target=_purge_loop, daemon=True).start()
 
@@ -650,7 +673,7 @@ async def enroll(body: EnrollBody):
                 with open(os.path.join(student_photos_dir, f"{i+1}.jpg"), "wb") as f:
                     f.write(img_bytes)
             except Exception as ex:
-                print(f"[enroll] photo save error: {ex}")
+                log.error(f"[enroll] photo save error: {ex}")
 
     if not embeddings:
         raise HTTPException(400, "Нүүр илрүүлэгдсэнгүй. Гэрэлтэй газарт зураг авна уу.")
@@ -1004,7 +1027,7 @@ async def admin_purge_now():
             if os.path.isfile(p) and os.path.getmtime(p) < cutoff:
                 os.remove(p); purged_clips += 1
     except Exception as e:
-        print(f"[purge] clip cleanup error: {e}")
+        log.error(f"[purge] clip cleanup error: {e}")
     return {"days": days, "rows_deleted": counts, "clips_deleted": purged_clips}
 
 
@@ -1056,7 +1079,7 @@ async def bullying_threshold_suggestion():
 
 # ── Eval workflow (record → label → run) ──────────────────────────────────────
 
-EVAL_DIR        = os.path.join(_BASE, "..", "eval")
+EVAL_DIR        = os.path.abspath(os.path.join(_BASE, "..", "eval"))
 EVAL_CLIPS_DIR  = os.path.join(EVAL_DIR, "clips")
 EVAL_LABELS_CSV = os.path.join(EVAL_DIR, "labels.csv")
 EVAL_RESULTS    = os.path.join(EVAL_DIR, "last_run.json")
@@ -1216,6 +1239,43 @@ async def eval_results():
 
 @app.get("/eval")
 async def page_eval():             return serve_html()
+
+
+# ── Health endpoint (for monitoring + uptime checks) ──────────────────────────
+
+_STARTED_AT = time.time()
+
+
+@app.get("/api/health")
+async def health():
+    """Liveness + readiness probe. Returns 200 always; payload tells you
+       what's actually working so an external uptime monitor can alert
+       on degraded state without false-positive 5xxs."""
+    conn = db.get_db()
+    try:
+        last_inc = conn.execute(
+            "SELECT MAX(timestamp) AS ts FROM bullying_incidents"
+        ).fetchone()
+        last_incident = last_inc["ts"] if last_inc else None
+    except Exception:
+        last_incident = None
+    try:
+        n_students = conn.execute(
+            "SELECT COUNT(*) FROM students WHERE role='student'"
+        ).fetchone()[0]
+    except Exception:
+        n_students = -1
+
+    return {
+        "status":         "ok",
+        "uptime_s":       round(time.time() - _STARTED_AT),
+        "camera_running": camera.is_running,
+        "exam_mode":      camera.exam_mode,
+        "recording":      camera.is_recording(),
+        "n_students":     n_students,
+        "last_incident":  last_incident,
+        "feature_flags":  dict(FEATURE_FLAGS),
+    }
 
 
 # ── SPA catch-all (must be last) ──────────────────────────────────────────────

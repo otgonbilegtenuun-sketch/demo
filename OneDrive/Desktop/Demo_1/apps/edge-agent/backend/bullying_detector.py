@@ -24,6 +24,8 @@ Aggregation
 
 from collections import deque
 from typing import Callable, Optional
+from log_setup import get_logger
+log = get_logger(__name__)
 
 
 class BullyingDetector:
@@ -152,7 +154,7 @@ class BullyingDetector:
                 try:
                     self.on_incident(event)
                 except Exception as e:
-                    print(f"[bullying] on_incident error: {e}")
+                    log.error(f"[bullying] on_incident error: {e}")
 
             self._last_incident = now
             self._signal_started.pop(s["key"], None)

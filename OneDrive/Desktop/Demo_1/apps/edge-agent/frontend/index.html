@@ -1019,25 +1019,40 @@
   </div>
 
   <div class="g5 mb20">
-    <div class="card stat-card">
-      <div class="stat-val" id="tPresent" style="color:var(--success)">—</div>
+    <div class="card stat-card green">
+      <div class="stat-icon green"><svg class="icon-lg"><use href="#i-check"/></svg></div>
+      <div class="stat-val" id="tPresent">—</div>
       <div class="stat-label" data-i18n="stat_present">Ирсэн</div>
     </div>
-    <div class="card stat-card">
-      <div class="stat-val" id="tAbsent" style="color:var(--danger)">—</div>
+    <div class="card stat-card red">
+      <div class="stat-icon red"><svg class="icon-lg"><use href="#i-person-off"/></svg></div>
+      <div class="stat-val" id="tAbsent">—</div>
       <div class="stat-label" data-i18n="stat_absent">Ирээгүй</div>
     </div>
-    <div class="card stat-card">
-      <div class="stat-val" id="tAtten" style="color:var(--accent)">—</div>
+    <div class="card stat-card bronze">
+      <div class="stat-icon"><svg class="icon-lg"><use href="#i-eye"/></svg></div>
+      <div class="stat-val" id="tAtten">—</div>
       <div class="stat-label" data-i18n="stat_avg_att">Дундаж анхаарал</div>
     </div>
-    <div class="card stat-card">
-      <div class="stat-val" id="tAlerts" style="color:var(--danger)">—</div>
+    <div class="card stat-card warning">
+      <div class="stat-icon warning"><svg class="icon-lg"><use href="#i-alert"/></svg></div>
+      <div class="stat-val" id="tAlerts">—</div>
       <div class="stat-label" data-i18n="stat_alerts">Мэдэгдэл</div>
     </div>
-    <div class="card stat-card">
-      <div class="stat-val" id="tUniform" style="color:var(--success)">—</div>
+    <div class="card stat-card gold">
+      <div class="stat-icon gold"><svg class="icon-lg"><use href="#i-shield"/></svg></div>
+      <div class="stat-val" id="tUniform">—</div>
       <div class="stat-label" data-i18n="uniform_rate">Дүрэмт хувцас</div>
+    </div>
+  </div>
+
+  <div class="card mb20">
+    <div class="card-title" data-i18n="att_grid_t">
+      <span>Анхаарлын хяналт</span>
+      <span class="text-muted text-sm" style="font-size:.7rem;text-transform:none;letter-spacing:0;font-weight:500" id="attGridSub"></span>
+    </div>
+    <div class="att-grid" id="attGrid">
+      <p class="text-muted text-sm" data-i18n="loading">Уншиж байна…</p>
     </div>
   </div>
 
@@ -1107,25 +1122,28 @@
       <p data-i18n="parent_sub">Хүүхдийнхээ ирц, анхаарлын тойм</p>
     </div>
   </div>
-  <div class="g2 mb16" style="max-width:720px">
-    <div class="card">
-      <div class="card-title" data-i18n="student_lbl">Оюутан</div>
-      <div class="student-hero">
-        <div class="student-avatar"><div class="icon-box icon-box-lg"><svg class="icon-xl"><use href="#i-users"/></svg></div></div>
-        <div>
-          <div id="pName" style="font-size:1.5rem;font-weight:800;letter-spacing:-.02em">—</div>
-          <div id="pClass" class="text-muted text-sm"></div>
-          <div id="pStatus" style="margin-top:6px"></div>
-        </div>
+  <div class="hero-banner mb20" style="max-width:720px">
+    <div class="hero-row">
+      <div class="hero-avatar" id="pAvatar">—</div>
+      <div style="flex:1;min-width:0">
+        <div class="hero-name" id="pName">—</div>
+        <div class="hero-meta" id="pClass"></div>
+        <div id="pStatus" style="margin-top:8px"></div>
       </div>
     </div>
-    <div class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
-      <div class="card-title" data-i18n="att_score">Анхаарлын оноо</div>
-      <div class="ring-wrap">
-        <div class="ring-val" id="pAttVal" style="color:var(--accent)">—</div>
-        <div class="ring-sub" data-i18n="att_score">Анхаарал</div>
+    <div class="hero-stats">
+      <div class="hero-stat">
+        <div class="hero-stat-val" id="pAttVal">—</div>
+        <div class="hero-stat-label" data-i18n="att_score">Анхаарал</div>
       </div>
-      <div id="pAttBar" style="width:100%;margin-top:8px"></div>
+      <div class="hero-stat">
+        <div class="hero-stat-val" id="pUnifVal">—</div>
+        <div class="hero-stat-label" data-i18n="uniform_short">Хувцас</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-val" id="pAlertVal">0</div>
+        <div class="hero-stat-label" data-i18n="alerts_short">Анхааруулга</div>
+      </div>
     </div>
   </div>
   <div class="card" style="max-width:720px">
@@ -1258,20 +1276,24 @@
   </div>
 
   <div class="g4 mb20">
-    <div class="card stat-card">
-      <div class="stat-val" id="incToday" style="color:var(--danger)">—</div>
+    <div class="card stat-card red">
+      <div class="stat-icon red"><svg class="icon-lg"><use href="#i-alert"/></svg></div>
+      <div class="stat-val" id="incToday">—</div>
       <div class="stat-label" data-i18n="inc_today">Өнөөдөр</div>
     </div>
-    <div class="card stat-card">
-      <div class="stat-val" id="incWeek" style="color:var(--accent)">—</div>
+    <div class="card stat-card bronze">
+      <div class="stat-icon"><svg class="icon-lg"><use href="#i-clock"/></svg></div>
+      <div class="stat-val" id="incWeek">—</div>
       <div class="stat-label" data-i18n="inc_week">7 хоногт</div>
     </div>
-    <div class="card stat-card">
-      <div class="stat-val" id="incPending" style="color:var(--warning)">—</div>
+    <div class="card stat-card warning">
+      <div class="stat-icon warning"><svg class="icon-lg"><use href="#i-bell"/></svg></div>
+      <div class="stat-val" id="incPending">—</div>
       <div class="stat-label" data-i18n="inc_pending">Хүлээгдэж буй</div>
     </div>
-    <div class="card stat-card">
-      <div class="stat-val" id="incTopSig" style="color:var(--text);font-size:1.1rem">—</div>
+    <div class="card stat-card gold">
+      <div class="stat-icon gold"><svg class="icon-lg"><use href="#i-chart"/></svg></div>
+      <div class="stat-val" id="incTopSig" style="font-size:1.1rem">—</div>
       <div class="stat-label" data-i18n="inc_top_sig">Гол дохио</div>
     </div>
   </div>
@@ -1494,6 +1516,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=2026-04-29-safety"></script>
+<script src="/static/app.js?v=2026-04-29-design"></script>
 </body>
 </html>

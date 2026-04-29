@@ -151,6 +151,8 @@ const I18N = {
     recent_alerts:'Сүүлийн мэдэгдэл', no_alerts:'Мэдэгдэл байхгүй',
     teacher_h1:'Багшийн самбар',
     stat_present:'Ирсэн', stat_absent:'Ирээгүй', stat_avg_att:'Дундаж анхаарал', stat_alerts:'Мэдэгдэл',
+    uniform_short:'Хувцас', alerts_short:'Анхааруулга',
+    att_grid_t:'Анхаарлын хяналт',
     today_att:'Өнөөдрийн ирц',
     col_name:'Нэр', col_arrived:'Ирсэн цаг', col_att:'Анхаарал', col_alerts:'Мэдэгдэл',
     col_status:'Төлөв', col_class:'Анги',
@@ -331,6 +333,8 @@ const I18N = {
     recent_alerts:'Recent Alerts', no_alerts:'No alerts yet',
     teacher_h1:'Teacher Dashboard',
     stat_present:'Present', stat_absent:'Absent', stat_avg_att:'Avg Attention', stat_alerts:'Alerts',
+    uniform_short:'Uniform', alerts_short:'Alerts',
+    att_grid_t:'Class attention',
     today_att:"Today's Attendance",
     col_name:'Name', col_arrived:'Arrived', col_att:'Attention', col_alerts:'Alerts',
     col_status:'Status', col_class:'Class',
@@ -1246,6 +1250,9 @@ function renderAttTable(rows) {
   setStatVal('tAtten',   avgAtt, '%');
   setStatVal('tAlerts',  alerts);
 
+  // Attention card grid — at-a-glance class status (design handoff)
+  renderAttentionGrid(rows);
+
   const tbody=document.getElementById('attTable');
   if(!rows.length){tbody.innerHTML=`<tr><td colspan="6" class="text-muted">${t('no_student')}</td></tr>`;return;}
 
@@ -1361,15 +1368,24 @@ async function initParent() {
   }
   document.getElementById('pName').textContent=s.name;
   document.getElementById('pClass').textContent=s.class_name;
+  // Hero avatar: use the first 1-2 chars of student name as initials
+  const avEl = document.getElementById('pAvatar');
+  if (avEl && s.name) {
+    avEl.textContent = s.name.trim().slice(0, 2).toUpperCase();
+  }
+  // Hero alert + uniform stat slots (set safely whether or not d is present)
+  const setIf = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
+  setIf('pAlertVal', (d && typeof d.alert_count === 'number') ? d.alert_count : 0);
+  if (uRow && uRow.is_wearing === true)        setIf('pUnifVal', '✓');
+  else if (uRow && uRow.is_wearing === false)  setIf('pUnifVal', '✗');
+  else                                          setIf('pUnifVal', '—');
 
   if(d){
     const c=attColor(d.attention_score);
     document.getElementById('pStatus').innerHTML=d.present
-      ?`<span class="badge badge-green"><svg class="icon-sm"><use href="#i-check"/></svg>${t('p_present')}</span>`
+      ?`<span class="live-pill">${t('p_present')}</span>`
       :`<span class="badge badge-gray">${t('p_absent')}</span>`;
     document.getElementById('pAttVal').textContent=d.attention_score+'%';
-    document.getElementById('pAttVal').style.color=c;
-    document.getElementById('pAttBar').innerHTML=`<div class="att-wrap"><div class="att-track" style="height:10px"><div class="att-fill" style="width:${d.attention_score}%;background:${c};height:10px"></div></div></div>`;
     document.getElementById('pSummary').innerHTML=`
       <div style="display:flex;flex-direction:column;gap:10px">
         <div class="flex gap8 items-center"><svg class="icon-sm" style="color:var(--muted)"><use href="#i-clock"/></svg><span>${t('p_arrived')} <strong>${fmtTime(d.arrived_at)}</strong></span></div>
@@ -2282,4 +2298,52 @@ async function refreshEvalResults() {
       '<div class="card stat-card"><div class="stat-val">' + (s.tp||0) + '/' + (s.fp||0) + '/' + (s.tn||0) + '/' + (s.fn||0) + '</div><div class="stat-label">TP/FP/TN/FN</div></div>' +
     '</div>' +
     '<div class="text-sm" style="font-family:monospace;background:var(--surface2);padding:10px;border-radius:6px">' + perClip + '</div>';
+}
+
+// ═════════════════════ ATTENTION CARD GRID (teacher dashboard) ════════════════
+// Renders one card per student: status-colored bottom bar, big % score,
+// alert count badge, "—" for absent. Matches design_handoff att-grid spec.
+
+function attCellClass(score, present) {
+  if (!present)        return 'absent';
+  if (score >= 75)     return '';        // green default
+  if (score >= 55)     return 'med';
+  return 'low';
+}
+
+function initialsOf(name) {
+  if (!name) return '—';
+  return name.trim().slice(0, 2).toUpperCase();
+}
+
+function renderAttentionGrid(rows) {
+  const el = document.getElementById('attGrid');
+  if (!el) return;
+  if (!rows || !rows.length) {
+    el.innerHTML = '<p class="text-muted text-sm">' +
+      (S.lang === 'mn' ? 'Оюутан байхгүй' : 'No students') + '</p>';
+    return;
+  }
+  el.innerHTML = rows.map(r => {
+    const cls = attCellClass(r.attention_score, r.present);
+    const score = r.present ? (r.attention_score + '%') : '—';
+    const valCls = r.present ? '' : 'gray';
+    const badge = r.alert_count > 0
+      ? '<span class="att-cell-badge">' + r.alert_count + '</span>'
+      : '';
+    return (
+      '<div class="att-cell ' + cls + '">' +
+        badge +
+        '<div class="att-cell-name">' + r.name + '</div>' +
+        '<div class="att-cell-val ' + valCls + '">' + score + '</div>' +
+      '</div>'
+    );
+  }).join('');
+  // Sub-label showing N present / total
+  const sub = document.getElementById('attGridSub');
+  if (sub) {
+    const present = rows.filter(r => r.present).length;
+    sub.textContent = present + ' / ' + rows.length +
+      (S.lang === 'mn' ? ' ирсэн' : ' present');
+  }
 }

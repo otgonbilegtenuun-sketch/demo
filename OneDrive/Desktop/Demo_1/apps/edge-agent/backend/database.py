@@ -10,6 +10,8 @@ import random
 import hashlib
 import secrets
 from datetime import date, datetime
+from log_setup import get_logger
+log = get_logger(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "classroom.db")
 _thread_local = threading.local()
@@ -131,7 +133,7 @@ def _migrate_bullying_incidents(conn: sqlite3.Connection):
     if cols and "video_clip_path" not in cols:
         conn.execute("ALTER TABLE bullying_incidents ADD COLUMN video_clip_path TEXT")
         conn.commit()
-        print("[Mergen AI] Migrated bullying_incidents: added video_clip_path")
+        log.info("[Mergen AI] Migrated bullying_incidents: added video_clip_path")
 
 
 def _migrate_students_profile(conn: sqlite3.Connection):
@@ -166,7 +168,7 @@ def _migrate_alerts(conn: sqlite3.Connection):
                 ALTER TABLE alerts_v2 RENAME TO alerts;
             """)
             conn.commit()
-            print("[Mergen AI] Migrated alerts table: student_id is now nullable")
+            log.warning("[Mergen AI] Migrated alerts table: student_id is now nullable")
             break
 
 
@@ -192,7 +194,7 @@ def _seed_demo_data(conn: sqlite3.Connection):
         )
 
     conn.commit()
-    print("[Mergen AI] Demo students seeded (attendance will be recorded from camera)")
+    log.info("[Mergen AI] Demo students seeded (attendance will be recorded from camera)")
 
 
 # ── Student CRUD ──────────────────────────────────────────────────────────────
@@ -666,7 +668,7 @@ def _seed_demo_users(conn: sqlite3.Connection):
             seeded += 1
     conn.commit()
     if seeded:
-        print(f"[Mergen AI] Demo users seeded ({seeded} added)")
+        log.info(f"[Mergen AI] Demo users seeded ({seeded} added)")
 
 
 def create_user(username: str, password: str, role: str,
