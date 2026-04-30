@@ -68,7 +68,12 @@
   padding: 4px 12px;
   display: flex; flex-direction: column;
   gap: 2px;
+  overflow-y: auto;          /* scroll if many nav items on short windows */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.12) transparent;
 }
+.sb-nav::-webkit-scrollbar { width: 6px; }
+.sb-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 3px; }
 .sb-item {
   display: flex; align-items: center; gap: 11px;
   padding: 10px 12px;
@@ -90,7 +95,14 @@
   color: #fff;
   font-weight: 600;
 }
-.sb-item svg { width: 17px; height: 17px; flex-shrink: 0; }
+.sb-item svg { width: 17px; height: 17px; flex-shrink: 0; color: currentColor; }
+.sb-item > span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
 .sb-item .sb-badge {
   margin-left: auto;
   background: var(--danger);
@@ -224,7 +236,7 @@
 .tb-pill.date {
   background: var(--accent-lt);
   color: var(--accent-dk);
-  text-transform: capitalize;
+  /* No capitalize — Cyrillic/Mongolian glyphs reflow oddly with it */
 }
 .tb-icon-btn {
   position: relative;
@@ -276,13 +288,13 @@
   margin: 0 auto;
 }
 
-/* When app-shell is active, the legacy .page rules still apply
-   to inner page divs; we just remove their max-width since .content
-   already provides that. */
-.app-shell .page {
-  padding: 0;
-  max-width: none;
-  margin: 0;
+/* In the new chrome-app shell the .content wrapper already provides
+   padding + max-width, so the legacy .page rules need to be neutralised
+   to avoid double-padding and a too-narrow column. */
+body.chrome-app .page {
+  padding: 0 !important;
+  max-width: none !important;
+  margin: 0 !important;
 }
 
 /* ── Bottom tab nav (parent on mobile) ─────────────────────── */

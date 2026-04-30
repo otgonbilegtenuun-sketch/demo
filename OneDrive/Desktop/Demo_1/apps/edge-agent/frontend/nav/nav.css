@@ -1,5 +1,10 @@
-/* ── Navigation ─────────────────────────────────────────────────────────── */
-nav {
+/* ── Marketing nav (logged-out / landing only) ──────────────────────────────
+   IMPORTANT: every selector here is scoped to `body > nav` (direct child of
+   body). The new dashboard sidebar uses <nav class="sb-nav"> nested inside
+   <aside id="appSidebar"> — those bare-element rules used to leak into it
+   and paint the sidebar gray on dark. Don't unscope without checking.
+   ─────────────────────────────────────────────────────────────────────── */
+body > nav {
   display: flex;
   align-items: center;
 
@@ -44,7 +49,7 @@ nav {
   display: flex;
   align-items: center;
 }
-.nav-links a, .nav-group a {
+body > nav .nav-links a, body > nav .nav-group a {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -59,7 +64,7 @@ nav {
   white-space: nowrap;
   position: relative;
 }
-.nav-links a::after, .nav-group a::after {
+body > nav .nav-links a::after, body > nav .nav-group a::after {
   content: ''; position: absolute;
   left: 14px; right: 14px; bottom: 2px;
   height: 2px; background: var(--accent);
@@ -67,20 +72,20 @@ nav {
   transform: scaleX(0); transform-origin: center;
   transition: transform .22s cubic-bezier(.34,1.56,.64,1);
 }
-.nav-links a:hover::after, .nav-group a:hover::after { transform: scaleX(1); }
-.nav-links a:hover, .nav-group a:hover { color: #111; background: transparent; }
-.nav-links a.active, .nav-group a.active { color: var(--accent); background: var(--accent-lt); }
+body > nav .nav-links a:hover::after, body > nav .nav-group a:hover::after { transform: scaleX(1); }
+body > nav .nav-links a:hover, body > nav .nav-group a:hover { color: #111; background: transparent; }
+body > nav .nav-links a.active, body > nav .nav-group a.active { color: var(--accent); background: var(--accent-lt); }
 
-nav a {
+body > nav a {
   display: flex; align-items: center; gap: 6px;
   color: #374151; text-decoration: none;
   padding: 6px 14px; border-radius: 6px;
   font-size: .88rem; font-weight: 600;
   transition: background .15s, color .15s, transform .12s;
 }
-nav a:hover  { color: #111; background: #F3F4F6; }
-nav a:active { transform: scale(.96); }
-nav a.active { color: var(--accent); background: var(--accent-lt); font-weight: 700; }
+body > nav a:hover  { color: #111; background: #F3F4F6; }
+body > nav a:active { transform: scale(.96); }
+body > nav a.active { color: var(--accent); background: var(--accent-lt); font-weight: 700; }
 
 .nav-sep     { width: 1px; height: 22px; background: #E5E7EB; margin: 0 12px; flex-shrink: 0; }
 .nav-divider { width: 1px; height: 28px; background: #E5E7EB; margin: 0 8px;  flex-shrink: 0; }
