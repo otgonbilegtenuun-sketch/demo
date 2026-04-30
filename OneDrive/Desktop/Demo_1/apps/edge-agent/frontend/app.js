@@ -153,6 +153,14 @@ const I18N = {
     stat_present:'Ирсэн', stat_absent:'Ирээгүй', stat_avg_att:'Дундаж анхаарал', stat_alerts:'Мэдэгдэл',
     uniform_short:'Хувцас', alerts_short:'Анхааруулга',
     att_grid_t:'Анхаарлын хяналт',
+    sb_section:'Удирдлага', nav_admin_dash:'Удирдлагын самбар',
+    auth_brand_tag:'Ухаалаг ангийн хяналтын систем',
+    auth_brand_sub:'Ирц, анхаарал, шалгалт, хэргийн илрүүлэлт — нэг платформ дээр.',
+    auth_b1:'Нүүр таних автомат ирц',
+    auth_b2:'Багшийн хяналтанд тулгуурласан AI',
+    auth_b3:'Сургуулийн хувийн мэдээлэл хадгалах',
+    bn_home:'Нүүр', bn_alerts:'Мэдэгдэл', bn_history:'Ирц', bn_profile:'Профайл',
+    cam_live:'Бодит цаг',
     today_att:'Өнөөдрийн ирц',
     col_name:'Нэр', col_arrived:'Ирсэн цаг', col_att:'Анхаарал', col_alerts:'Мэдэгдэл',
     col_status:'Төлөв', col_class:'Анги',
@@ -335,6 +343,14 @@ const I18N = {
     stat_present:'Present', stat_absent:'Absent', stat_avg_att:'Avg Attention', stat_alerts:'Alerts',
     uniform_short:'Uniform', alerts_short:'Alerts',
     att_grid_t:'Class attention',
+    sb_section:'Workspace', nav_admin_dash:'Admin dashboard',
+    auth_brand_tag:'AI-powered classroom monitoring',
+    auth_brand_sub:'Attendance, attention, exam mode and incident review — one platform.',
+    auth_b1:'Automated face-recognition attendance',
+    auth_b2:'Teacher-supervised AI judgments',
+    auth_b3:'Privacy: student video stays at the school',
+    bn_home:'Home', bn_alerts:'Alerts', bn_history:'Attendance', bn_profile:'Profile',
+    cam_live:'Live',
     today_att:"Today's Attendance",
     col_name:'Name', col_arrived:'Arrived', col_att:'Attention', col_alerts:'Alerts',
     col_status:'Status', col_class:'Class',
@@ -505,6 +521,120 @@ function updateNav() {
     const av = document.getElementById('navUserAvatar');
     if (av) av.textContent = displayName.slice(0, 2).toUpperCase();
   }
+  // ─── New app shell (sidebar) ─────────────────────────────────────────────
+  document.body.classList.toggle('parent-mode', isParent);
+  // Tint sidebar warm for teacher/parent, dark for admin (per design handoff)
+  const sidebar = document.getElementById('appSidebar');
+  if (sidebar) sidebar.classList.toggle('warm', !isAdmin);
+  if (u) {
+    const displayName = u.full_name || u.username;
+    const ini = displayName.slice(0, 2).toUpperCase();
+    const sbAv = document.getElementById('sbAvatar'); if (sbAv) sbAv.textContent = ini;
+    const sbN  = document.getElementById('sbUserName'); if (sbN) sbN.textContent = displayName;
+    const sbR  = document.getElementById('sbUserRole'); if (sbR) sbR.textContent = role || '';
+  }
+  renderSidebarNav();
+}
+
+// Sidebar nav items per role. Keys map to hrefs and i18n keys.
+const SIDEBAR_NAV = {
+  admin: [
+    { href: '/monitor',           i: 'i-camera',    k: 'nav_monitor' },
+    { href: '/dashboard/admin',   i: 'i-grid',      k: 'nav_admin_dash' },
+    { href: '/students',          i: 'i-users',     k: 'nav_students' },
+    { href: '/enroll',            i: 'i-user-plus', k: 'nav_enroll' },
+    { href: '/incidents',         i: 'i-alert',     k: 'nav_incidents', badge: 'sbBadgeInc' },
+    { href: '/seats',             i: 'i-grid',      k: 'nav_seats' },
+    { href: '/admin',             i: 'i-shield',    k: 'nav_admin_cfg' },
+    { href: '/eval',              i: 'i-chart',     k: 'nav_eval' },
+  ],
+  teacher: [
+    { href: '/dashboard/teacher', i: 'i-grid',      k: 'nav_teacher_dash' },
+    { href: '/students',          i: 'i-users',     k: 'nav_students' },
+    { href: '/enroll',            i: 'i-user-plus', k: 'nav_enroll' },
+    { href: '/incidents',         i: 'i-alert',     k: 'nav_incidents', badge: 'sbBadgeInc' },
+    { href: '/seats',             i: 'i-grid',      k: 'nav_seats' },
+  ],
+  parent: [
+    { href: '/dashboard/parent',  i: 'i-users',     k: 'parent_h1' },
+  ],
+};
+
+function renderSidebarNav() {
+  const el = document.getElementById('sbNav');
+  if (!el || !S.user) { if (el) el.innerHTML = ''; return; }
+  const items = SIDEBAR_NAV[S.user.role] || [];
+  const cur = window.location.pathname;
+  el.innerHTML = items.map(it => {
+    const active = (cur === it.href) ? 'active' : '';
+    const badge = it.badge ? `<span class="sb-badge" id="${it.badge}" style="display:none">0</span>` : '';
+    return `<a href="${it.href}" class="sb-item ${active}" onclick="go(event,'${it.href}')">`
+         + `<svg><use href="#${it.i}"/></svg>`
+         + `<span data-i18n="${it.k}">${t(it.k)}</span>${badge}</a>`;
+  }).join('');
+}
+
+function toggleSidebar(force) {
+  const el = document.getElementById('appSidebar');
+  if (!el) return;
+  if (force === false)      el.classList.remove('open');
+  else if (force === true)  el.classList.add('open');
+  else                      el.classList.toggle('open');
+}
+
+// Topbar title per page + date pill + lang sync
+const PAGE_TITLES = {
+  '/dashboard/admin':   { mn: 'Удирдлагын самбар',  en: 'Admin dashboard' },
+  '/dashboard/teacher': { mn: 'Багшийн самбар',     en: 'Teacher dashboard' },
+  '/dashboard/parent':  { mn: 'Эцэг эхийн самбар',  en: 'Parent dashboard' },
+  '/monitor':           { mn: 'Камерын хяналт',     en: 'Monitor' },
+  '/students':          { mn: 'Оюутны бүртгэл',     en: 'Students' },
+  '/enroll':            { mn: 'Бүртгэл',            en: 'Enroll' },
+  '/incidents':         { mn: 'Хэргийн жагсаалт',   en: 'Incidents' },
+  '/seats':             { mn: 'Суудлын зураглал',   en: 'Seat map' },
+  '/admin':             { mn: 'Тохиргоо',           en: 'Settings' },
+  '/eval':              { mn: 'Үнэлгээ',            en: 'Eval' },
+};
+
+function updateTopbar(path) {
+  const titleEl = document.getElementById('tbTitle');
+  if (titleEl) {
+    const e = PAGE_TITLES[path];
+    titleEl.textContent = e ? (e[S.lang] || e.en) : 'Mergen AI';
+  }
+  const dateEl = document.getElementById('tbDate');
+  if (dateEl) {
+    const d = new Date();
+    dateEl.textContent = d.toLocaleDateString(S.lang === 'mn' ? 'mn-MN' : 'en-US',
+      { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+  const ex = document.getElementById('tbExamWrap');
+  if (ex) ex.style.display = path === '/monitor' ? 'flex' : 'none';
+  // sync lang buttons
+  ['btnMN','btnMN2'].forEach(id => { const b=document.getElementById(id); if (b) b.classList.toggle('active', S.lang==='mn'); });
+  ['btnEN','btnEN2'].forEach(id => { const b=document.getElementById(id); if (b) b.classList.toggle('active', S.lang==='en'); });
+}
+
+// Pages where the chrome-app shell (sidebar + topbar) is visible
+const CHROME_APP_PATHS = new Set([
+  '/monitor','/students','/enroll','/incidents','/seats','/admin','/eval',
+  '/dashboard/admin','/dashboard/teacher','/dashboard/parent',
+]);
+
+function applyChromeForPath(path) {
+  const isApp = CHROME_APP_PATHS.has(path) && !!S.user;
+  document.body.classList.toggle('chrome-app', isApp);
+  if (isApp) updateTopbar(path);
+  // Active state in sidebar
+  document.querySelectorAll('.sb-item').forEach(a => {
+    a.classList.toggle('active', a.getAttribute('href') === path);
+  });
+  // Active state in bottom-nav
+  document.querySelectorAll('.bn-item').forEach(a => {
+    a.classList.toggle('active', a.getAttribute('href') === path);
+  });
+  // Close mobile sidebar drawer on navigate
+  toggleSidebar(false);
 }
 
 async function loadUser() {
@@ -661,6 +791,7 @@ function go(e, path) {
 window.addEventListener('popstate', () => showPage(window.location.pathname));
 
 function showPage(path) {
+  applyChromeForPath(path);
   document.querySelectorAll('.page').forEach(p => {
     p.classList.remove('active');
     p.style.animation = 'none';
@@ -1614,6 +1745,32 @@ async function resetDemo() {
 }
 
 // ═════════════════════ BOOT ═══════════════════════════════════════════════════
+
+// Global Chart.js theme — bronze accent, soft grid lines, Outfit font.
+function setupChartTheme() {
+  if (typeof Chart === 'undefined') return;
+  Chart.defaults.font.family = "'Outfit', 'Noto Sans Mongolian', sans-serif";
+  Chart.defaults.font.size   = 11;
+  Chart.defaults.color       = '#7A5C3E';
+  Chart.defaults.borderColor = 'rgba(0,0,0,.05)';
+  if (Chart.defaults.scale) {
+    Chart.defaults.scale.grid = { color: 'rgba(0,0,0,.04)', drawBorder: false };
+  }
+  if (Chart.defaults.plugins) {
+    Chart.defaults.plugins.legend.labels.boxWidth     = 10;
+    Chart.defaults.plugins.legend.labels.boxHeight    = 10;
+    Chart.defaults.plugins.legend.labels.usePointStyle= true;
+    Chart.defaults.plugins.tooltip.backgroundColor    = '#1A0F00';
+    Chart.defaults.plugins.tooltip.titleColor         = '#fff';
+    Chart.defaults.plugins.tooltip.bodyColor          = 'rgba(255,255,255,.85)';
+    Chart.defaults.plugins.tooltip.padding            = 10;
+    Chart.defaults.plugins.tooltip.cornerRadius       = 8;
+    Chart.defaults.plugins.tooltip.borderColor        = 'rgba(255,255,255,.08)';
+    Chart.defaults.plugins.tooltip.borderWidth        = 1;
+    Chart.defaults.plugins.tooltip.titleFont          = { weight: 700 };
+  }
+}
+setupChartTheme();
 
 applyI18n();
 updateNav();

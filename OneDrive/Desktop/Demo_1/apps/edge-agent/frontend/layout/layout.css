@@ -1,0 +1,385 @@
+/* ═══════════════════════════════════════════════════════════
+   APP SHELL — sidebar + topbar + content
+   Source of truth for the dashboard chrome.
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  --sb-w:        240px;          /* desktop sidebar */
+  --sb-w-mini:   72px;           /* collapsed (future) */
+  --sb-bg:       #18120D;
+  --sb-bg-warm:  #2C1A0E;        /* used for teacher / parent variants */
+  --sb-text:     rgba(255,255,255,.72);
+  --sb-text-mute:rgba(255,255,255,.45);
+  --sb-active:   var(--accent);
+  --tb-h:        60px;
+  --content-pad: 28px;
+}
+
+/* App shell wraps EVERYTHING. body keeps its bg+gradient,
+   .app-shell is the flex parent of sidebar + main-area. */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  align-items: stretch;
+}
+
+/* ── Sidebar ───────────────────────────────────────────────── */
+.sidebar {
+  width: var(--sb-w);
+  flex-shrink: 0;
+  background: var(--sb-bg);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0; left: 0;
+  height: 100vh;
+  z-index: 100;
+  transition: transform .25s ease;
+}
+.sidebar.warm { background: var(--sb-bg-warm); }
+
+.sb-logo {
+  padding: 22px 20px 16px;
+  display: flex; align-items: center; gap: 10px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.sb-logo-mark {
+  width: 36px; height: 36px;
+  background: var(--accent);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.sb-logo-mark svg { width: 18px; height: 18px; color: #fff; }
+.sb-logo-text {
+  font-size: .95rem; font-weight: 800;
+  color: #fff; letter-spacing: -.02em;
+  line-height: 1.1;
+}
+.sb-logo-text span { color: var(--accent2); }
+
+.sb-section {
+  padding: 14px 14px 4px;
+  font-size: .62rem; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: rgba(255,255,255,.3);
+}
+.sb-nav {
+  padding: 4px 12px;
+  display: flex; flex-direction: column;
+  gap: 2px;
+}
+.sb-item {
+  display: flex; align-items: center; gap: 11px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  font-size: .875rem; font-weight: 500;
+  color: var(--sb-text);
+  cursor: pointer;
+  transition: background .14s, color .14s;
+  position: relative;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.sb-item:hover {
+  background: rgba(255,255,255,.07);
+  color: #fff;
+}
+.sb-item.active {
+  background: var(--sb-active);
+  color: #fff;
+  font-weight: 600;
+}
+.sb-item svg { width: 17px; height: 17px; flex-shrink: 0; }
+.sb-item .sb-badge {
+  margin-left: auto;
+  background: var(--danger);
+  color: #fff;
+  font-size: .65rem; font-weight: 800;
+  padding: 1px 7px;
+  border-radius: 999px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.sb-spacer { flex: 1; }
+
+.sb-bottom {
+  padding: 12px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sb-user {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background .14s;
+}
+.sb-user:hover { background: rgba(255,255,255,.06); }
+.sb-avatar {
+  width: 34px; height: 34px;
+  border-radius: 9px;
+  background: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: .8rem;
+  color: #fff;
+  flex-shrink: 0;
+  letter-spacing: -.01em;
+}
+.sb-user-info { display: flex; flex-direction: column; min-width: 0; }
+.sb-user-info .name {
+  font-size: .82rem; font-weight: 600;
+  color: #fff; line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.sb-user-info .role {
+  font-size: .68rem;
+  color: var(--sb-text-mute);
+  text-transform: capitalize;
+}
+
+.sb-logout {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 8px;
+  color: rgba(255,255,255,.55);
+  font-size: .78rem; font-weight: 600;
+  cursor: pointer;
+  transition: all .14s;
+  font-family: inherit;
+}
+.sb-logout:hover {
+  background: rgba(220,38,38,.15);
+  border-color: rgba(220,38,38,.4);
+  color: #FCA5A5;
+}
+.sb-logout svg { width: 14px; height: 14px; }
+
+/* ── Main area (sibling of sidebar) ────────────────────────── */
+.main-area {
+  flex: 1;
+  margin-left: var(--sb-w);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-width: 0;
+  transition: margin .25s ease;
+}
+
+/* ── Topbar ────────────────────────────────────────────────── */
+.topbar {
+  height: var(--tb-h);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 28px;
+  gap: 14px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+.tb-burger {
+  display: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 34px; height: 34px;
+  padding: 0;
+  align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.tb-title {
+  font-size: 1rem; font-weight: 700;
+  letter-spacing: -.02em;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tb-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: .72rem; font-weight: 700;
+  white-space: nowrap;
+}
+.tb-pill.online {
+  background: var(--success-lt);
+  color: #065F46;
+}
+.tb-pill.online::before {
+  content: '';
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #059669;
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+.tb-pill.date {
+  background: var(--accent-lt);
+  color: var(--accent-dk);
+  text-transform: capitalize;
+}
+.tb-icon-btn {
+  position: relative;
+  width: 36px; height: 36px;
+  border-radius: 9px;
+  background: transparent;
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background .14s;
+  color: var(--muted);
+}
+.tb-icon-btn:hover { background: var(--bg); color: var(--text); }
+.tb-icon-btn .dot {
+  position: absolute; top: 6px; right: 6px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  border: 2px solid var(--surface);
+}
+
+.tb-lang {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.tb-lang button {
+  background: transparent;
+  border: none;
+  padding: 0 4px;
+  font-size: .76rem; font-weight: 700;
+  color: #9CA3AF;
+  letter-spacing: .03em;
+  cursor: pointer;
+  font-family: inherit;
+}
+.tb-lang button.active { color: var(--accent); }
+.tb-lang span { color: #D1D5DB; user-select: none; font-size: .7rem; }
+
+/* ── Content ───────────────────────────────────────────────── */
+.content {
+  padding: var(--content-pad);
+  flex: 1;
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+}
+
+/* When app-shell is active, the legacy .page rules still apply
+   to inner page divs; we just remove their max-width since .content
+   already provides that. */
+.app-shell .page {
+  padding: 0;
+  max-width: none;
+  margin: 0;
+}
+
+/* ── Bottom tab nav (parent on mobile) ─────────────────────── */
+.bottom-nav {
+  display: none;
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 90;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 6px 0 max(8px, env(safe-area-inset-bottom));
+  box-shadow: 0 -4px 12px rgba(0,0,0,.04);
+}
+.bn-row {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  max-width: 480px;
+  margin: 0 auto;
+}
+.bn-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 4px;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: .68rem;
+  font-weight: 600;
+  position: relative;
+  text-decoration: none;
+}
+.bn-item svg { width: 20px; height: 20px; }
+.bn-item.active { color: var(--accent); }
+.bn-item .bn-dot {
+  position: absolute;
+  top: 4px;
+  right: 28%;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+/* ── Mobile responsive ─────────────────────────────────────── */
+@media (max-width: 900px) {
+  .content { padding: 18px 16px; }
+}
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+    width: 280px;
+  }
+  .sidebar.open { transform: translateX(0); box-shadow: var(--shadow-lg); }
+  .main-area { margin-left: 0; }
+  .tb-burger { display: inline-flex; }
+  body.parent-mode .bottom-nav { display: block; }
+  body.parent-mode .main-area { padding-bottom: 72px; }
+  body.parent-mode .sidebar { display: none; }
+  body.parent-mode .topbar { padding: 0 16px; }
+}
+
+/* When sidebar is open on mobile, click outside closes it */
+.sb-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.4);
+  z-index: 99;
+}
+.sidebar.open ~ .sb-backdrop { display: block; }
+
+/* When chrome-app is active, hide the marketing nav and let the new
+   sidebar + topbar take over. When not active, hide the new shell. */
+body.chrome-app > nav { display: none; }
+body:not(.chrome-app) #appSidebar,
+body:not(.chrome-app) #appTopbar,
+body:not(.chrome-app) .sb-backdrop,
+body:not(.chrome-app) #bottomNav { display: none !important; }
+body:not(.chrome-app) .main-area { margin-left: 0; }
+body:not(.chrome-app) .content { padding: 0; max-width: none; }
+
+/* Body backdrop is dimmer in chrome-app mode (cleaner content) */
+body.chrome-app {
+  background-image: none !important;
+  background: var(--bg);
+}
+
+/* Sidebar nav items inherit svg color */
+.sb-item svg { color: currentColor; }
+
+/* Bottom-nav SVG sizing */
+.bn-item svg { width: 20px; height: 20px; }
+
+/* Hide sidebar nav badges on initial render until JS sets count */
+.sb-badge[style*="display:none"] { display: none !important; }
