@@ -8,11 +8,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Mongolian&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=2026-04-30-fixleak">
-<link rel="stylesheet" href="/static/layout/layout.css?v=2026-04-30-fixleak">
-<link rel="stylesheet" href="/static/nav/nav.css?v=2026-04-30-fixleak">
-<link rel="stylesheet" href="/static/hero/hero.css?v=2026-04-30-fixleak">
-<link rel="stylesheet" href="/static/pages/pages.css?v=2026-04-30-fixleak">
+<link rel="stylesheet" href="/static/style.css?v=2026-04-30-admin">
+<link rel="stylesheet" href="/static/layout/layout.css?v=2026-04-30-admin">
+<link rel="stylesheet" href="/static/nav/nav.css?v=2026-04-30-admin">
+<link rel="stylesheet" href="/static/hero/hero.css?v=2026-04-30-admin">
+<link rel="stylesheet" href="/static/pages/pages.css?v=2026-04-30-admin">
 
 </head>
 <body>
@@ -287,7 +287,7 @@
   <button class="tb-burger" onclick="toggleSidebar()">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
   </button>
-  <div class="tb-title" id="tbTitle">Mergen AI</div>
+  <div class="tb-title" id="tbTitle" onclick="goHome()" title="Home">Mergen AI</div>
   <span class="tb-pill online" id="tbLive" style="display:none"><span data-i18n="cam_live">Бодит цаг</span></span>
   <div class="exam-wrap" id="tbExamWrap" style="display:none">
     <span class="exam-label" data-i18n="exam_mode">Шалгалтын горим</span>
@@ -1118,6 +1118,83 @@
 
 
 <!-- ═══════════════════ ADMIN DASHBOARD ════════════════════════════════ -->
+<div id="page-admin-dashboard" class="page">
+  <div class="g4 mb20">
+    <div class="card stat-card bronze">
+      <div class="stat-icon"><svg class="icon-lg"><use href="#i-users"/></svg></div>
+      <div class="stat-val" id="adTotalStudents">—</div>
+      <div class="stat-label" data-i18n="ad_total_students">Нийт оюутан</div>
+    </div>
+    <div class="card stat-card green">
+      <div class="stat-icon green"><svg class="icon-lg"><use href="#i-check"/></svg></div>
+      <div class="stat-val" id="adAttendanceRate">—</div>
+      <div class="stat-label" data-i18n="ad_attendance_rate">Ирцийн хувь</div>
+    </div>
+    <div class="card stat-card red">
+      <div class="stat-icon red"><svg class="icon-lg"><use href="#i-alert"/></svg></div>
+      <div class="stat-val" id="adAlerts">—</div>
+      <div class="stat-label" data-i18n="ad_today_alerts">Өнөөдрийн анхаар.</div>
+    </div>
+    <div class="card stat-card gold">
+      <div class="stat-icon gold"><svg class="icon-lg"><use href="#i-shield"/></svg></div>
+      <div class="stat-val" id="adUniform">—</div>
+      <div class="stat-label" data-i18n="ad_uniform_compl">Дүрэмт хувцасны %</div>
+    </div>
+  </div>
+
+  <div class="g2 mb20">
+    <div class="card">
+      <div class="card-title">
+        <span data-i18n="ad_attention_chart">Анхаарал цагаар</span>
+        <span class="text-muted text-sm" style="font-size:.7rem;text-transform:none;letter-spacing:0;font-weight:500" data-i18n="ad_today">Өнөөдөр</span>
+      </div>
+      <canvas id="adAttentionChart" height="180"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-title">
+        <span data-i18n="ad_class_chart">Ангиар анхаарлын дундаж</span>
+      </div>
+      <canvas id="adClassChart" height="180"></canvas>
+    </div>
+  </div>
+
+  <div class="g2 mb20">
+    <div class="card">
+      <div class="card-title">
+        <span data-i18n="ad_class_breakdown">Ангийн задаргаа</span>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th data-i18n="ad_col_class">Анги</th>
+              <th data-i18n="ad_col_students">Оюутан</th>
+              <th data-i18n="ad_col_present">Ирсэн</th>
+              <th data-i18n="ad_col_attention">Анхаарал</th>
+              <th data-i18n="ad_col_alerts">Анхаар.</th>
+            </tr>
+          </thead>
+          <tbody id="adClassTable"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">
+        <span data-i18n="ad_recent_alerts">Сүүлийн анхааруулга</span>
+      </div>
+      <div class="notif-list" id="adAlertLog">
+        <p class="text-muted text-sm" data-i18n="no_alerts">Анхааруулга байхгүй</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">
+      <span data-i18n="ad_incidents_chart">Хэргийн дохио (7 хоног)</span>
+    </div>
+    <canvas id="adIncidentsChart" height="120"></canvas>
+  </div>
+</div>
 
 <!-- ═══════════════════ TEACHER DASHBOARD ═══════════════════════════════ -->
 <div id="page-teacher" class="page">
@@ -1632,6 +1709,6 @@
 </div><!-- /.content -->
 </main><!-- /.main-area -->
 
-<script src="/static/app.js?v=2026-04-30-fixleak"></script>
+<script src="/static/app.js?v=2026-04-30-admin"></script>
 </body>
 </html>

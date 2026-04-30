@@ -42,7 +42,13 @@
   padding: 22px 20px 16px;
   display: flex; align-items: center; gap: 10px;
   border-bottom: 1px solid rgba(255,255,255,.08);
+  cursor: pointer;
+  transition: background .14s;
+  user-select: none;
 }
+.sb-logo:hover { background: rgba(255,255,255,.04); }
+.tb-title { cursor: pointer; transition: color .14s; }
+.tb-title:hover { color: var(--accent); }
 .sb-logo-mark {
   width: 36px; height: 36px;
   background: var(--accent);
@@ -221,9 +227,11 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   width: 34px; height: 34px;
-  padding: 0;
+  padding: 0 !important;
   align-items: center; justify-content: center;
   cursor: pointer;
+  flex-shrink: 0;
+  color: var(--muted);
 }
 .tb-title {
   font-size: 1rem; font-weight: 700;
@@ -259,14 +267,19 @@
 .tb-icon-btn {
   position: relative;
   width: 36px; height: 36px;
+  padding: 0 !important;             /* override global button padding */
   border-radius: 9px;
   background: transparent;
   border: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: center;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   cursor: pointer;
   transition: background .14s;
   color: var(--muted);
+  flex-shrink: 0;
 }
+.tb-icon-btn svg { width: 16px; height: 16px; }
 .tb-icon-btn:hover { background: var(--bg); color: var(--text); }
 .tb-icon-btn .dot {
   position: absolute; top: 6px; right: 6px;

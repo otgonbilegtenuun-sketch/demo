@@ -154,6 +154,15 @@ const I18N = {
     uniform_short:'Хувцас', alerts_short:'Анхааруулга',
     att_grid_t:'Анхаарлын хяналт',
     sb_section:'Удирдлага', nav_admin_dash:'Удирдлагын самбар',
+    ad_total_students:'Нийт оюутан', ad_attendance_rate:'Ирцийн хувь',
+    ad_today_alerts:'Өнөөдрийн анхааруулга', ad_uniform_compl:'Дүрэмт хувцасны %',
+    ad_attention_chart:'Анхаарал цагаар', ad_today:'Өнөөдөр',
+    ad_class_chart:'Ангиар анхаарлын дундаж',
+    ad_class_breakdown:'Ангийн задаргаа',
+    ad_col_class:'Анги', ad_col_students:'Оюутан', ad_col_present:'Ирсэн',
+    ad_col_attention:'Анхаарал', ad_col_alerts:'Анхаар.',
+    ad_recent_alerts:'Сүүлийн анхааруулга',
+    ad_incidents_chart:'Хэргийн дохио (7 хоног)',
     auth_brand_tag:'Ухаалаг ангийн хяналтын систем',
     auth_brand_sub:'Ирц, анхаарал, шалгалт, хэргийн илрүүлэлт — нэг платформ дээр.',
     auth_b1:'Нүүр таних автомат ирц',
@@ -344,6 +353,15 @@ const I18N = {
     uniform_short:'Uniform', alerts_short:'Alerts',
     att_grid_t:'Class attention',
     sb_section:'Workspace', nav_admin_dash:'Admin dashboard',
+    ad_total_students:'Total students', ad_attendance_rate:'Attendance %',
+    ad_today_alerts:'Alerts today', ad_uniform_compl:'Uniform %',
+    ad_attention_chart:'Attention over time', ad_today:'Today',
+    ad_class_chart:'Avg attention by class',
+    ad_class_breakdown:'Class breakdown',
+    ad_col_class:'Class', ad_col_students:'Students', ad_col_present:'Present',
+    ad_col_attention:'Attention', ad_col_alerts:'Alerts',
+    ad_recent_alerts:'Recent alerts',
+    ad_incidents_chart:'Incidents (7-day)',
     auth_brand_tag:'AI-powered classroom monitoring',
     auth_brand_sub:'Attendance, attention, exam mode and incident review — one platform.',
     auth_b1:'Automated face-recognition attendance',
@@ -539,8 +557,8 @@ function updateNav() {
 // Sidebar nav items per role. Keys map to hrefs and i18n keys.
 const SIDEBAR_NAV = {
   admin: [
-    { href: '/monitor',           i: 'i-camera',    k: 'nav_monitor' },
     { href: '/dashboard/admin',   i: 'i-grid',      k: 'nav_admin_dash' },
+    { href: '/monitor',           i: 'i-camera',    k: 'nav_monitor' },
     { href: '/students',          i: 'i-users',     k: 'nav_students' },
     { href: '/enroll',            i: 'i-user-plus', k: 'nav_enroll' },
     { href: '/incidents',         i: 'i-alert',     k: 'nav_incidents', badge: 'sbBadgeInc' },
@@ -783,7 +801,8 @@ function go(e, path) {
   clearInterval(S.monTimer);
   clearInterval(S.incTimer);
   clearInterval(S.evalTimer);
-  S.pollTimer = S.monTimer = S.incTimer = S.evalTimer = null;
+  clearInterval(S.adTimer);
+  S.pollTimer = S.monTimer = S.incTimer = S.evalTimer = S.adTimer = null;
   if (window.location.pathname === '/monitor') _setVideoSrc(false);
   history.pushState({}, '', path);
   showPage(path);
@@ -815,9 +834,10 @@ function showPage(path) {
     '/seats':              ['page-seats',         '/seats'],
     '/admin':              ['page-admin',         '/admin'],
     '/eval':               ['page-eval',          '/eval'],
+    '/dashboard/admin':    ['page-admin-dashboard','/dashboard/admin'],
   };
 
-  const protectedPaths = ['/enroll','/monitor','/students','/dashboard/teacher','/dashboard/parent','/incidents','/seats','/admin','/eval'];
+  const protectedPaths = ['/enroll','/monitor','/students','/dashboard/teacher','/dashboard/parent','/dashboard/admin','/incidents','/seats','/admin','/eval'];
   if (!S.user && protectedPaths.includes(path)) {
     history.replaceState({}, '', '/landing');
     document.getElementById('page-landing')?.classList.add('active');
@@ -830,7 +850,7 @@ function showPage(path) {
     showPage(fallback);
     return;
   }
-  if (['/students','/enroll','/monitor','/dashboard/teacher','/incidents','/seats','/admin','/eval'].includes(path) && S.user?.role === 'parent') {
+  if (['/students','/enroll','/monitor','/dashboard/teacher','/dashboard/admin','/incidents','/seats','/admin','/eval'].includes(path) && S.user?.role === 'parent') {
     history.replaceState({}, '', '/dashboard/parent');
     showPage('/dashboard/parent');
     return;
@@ -867,6 +887,7 @@ function showPage(path) {
   if (path === '/seats')             initSeats();
   if (path === '/admin')             initAdmin();
   if (path === '/eval')              initEval();
+  if (path === '/dashboard/admin')   initAdminDashboard();
 }
 
 // ── API helper ───────────────────────────────────────────────────────────────
@@ -2503,4 +2524,184 @@ function renderAttentionGrid(rows) {
     sub.textContent = present + ' / ' + rows.length +
       (S.lang === 'mn' ? ' ирсэн' : ' present');
   }
+}
+
+// ═════════════════════ ADMIN DASHBOARD ═════════════════════════════════════════
+// School-wide stats, per-class attention, incident timeline, recent alerts.
+
+let _adAttChart = null, _adClassChart = null, _adIncChart = null;
+
+async function initAdminDashboard() {
+  if (S.adTimer) { clearInterval(S.adTimer); S.adTimer = null; }
+  await refreshAdminDashboard();
+  S.adTimer = setInterval(refreshAdminDashboard, 8000);
+}
+
+async function refreshAdminDashboard() {
+  // ── 1. Top stats ────────────────────────────────────────────────────────
+  const [stats, attHist, students, alerts, uniform, incStats, incRecent] = await Promise.all([
+    api('GET', '/api/attendance/stats').catch(() => ({})),
+    api('GET', '/api/attention/history').catch(() => []),
+    api('GET', '/api/students').catch(() => []),
+    api('GET', '/api/alerts/recent?since_id=0').catch(() => []),
+    api('GET', '/api/uniform/stats').catch(() => ({})),
+    api('GET', '/api/bullying/stats').catch(() => ({})),
+    api('GET', '/api/bullying/recent?limit=80').catch(() => []),
+  ]);
+
+  setText('adTotalStudents', stats.total_students ?? students.length ?? '—');
+  setText('adAttendanceRate', (stats.attendance_rate ?? 0) + '%');
+  setText('adAlerts', alerts.length);
+  setText('adUniform', (uniform.rate ?? '—') + '%');
+
+  // ── 2. Attention over time line chart ──────────────────────────────────
+  const labels = attHist.map(h => h.time_label);
+  const data   = attHist.map(h => h.avg_attention);
+  const attCtx = document.getElementById('adAttentionChart');
+  if (attCtx) {
+    if (_adAttChart) { _adAttChart.data.labels = labels; _adAttChart.data.datasets[0].data = data; _adAttChart.update('none'); }
+    else _adAttChart = new Chart(attCtx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: S.lang === 'mn' ? 'Анхаарал' : 'Attention',
+          data, borderColor: '#B87333',
+          backgroundColor: 'rgba(184,115,51,.12)',
+          borderWidth: 2.5, tension: .35, fill: true,
+          pointBackgroundColor: '#B87333', pointRadius: 3, pointHoverRadius: 5,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } },
+          x: { ticks: { maxTicksLimit: 8 } },
+        },
+      },
+    });
+  }
+
+  // ── 3. Attention by class (avg per class) bar chart ────────────────────
+  const byClass = {};
+  for (const s of students) {
+    const c = s.class_name || '—';
+    if (!byClass[c]) byClass[c] = { sum: 0, n: 0, alerts: 0, present: 0, total: 0 };
+    if (s.attention_score != null) { byClass[c].sum += s.attention_score; byClass[c].n += 1; }
+    byClass[c].alerts  += s.alert_count_today || 0;
+    byClass[c].total   += 1;
+    if (s.present_today) byClass[c].present += 1;
+  }
+  const classNames = Object.keys(byClass).sort();
+  const classAvgs  = classNames.map(c => byClass[c].n ? Math.round(byClass[c].sum / byClass[c].n) : 0);
+  const classColors = classAvgs.map(v => v >= 75 ? '#047857' : v >= 55 ? '#D97706' : '#DC2626');
+  const ccCtx = document.getElementById('adClassChart');
+  if (ccCtx) {
+    if (_adClassChart) {
+      _adClassChart.data.labels = classNames;
+      _adClassChart.data.datasets[0].data = classAvgs;
+      _adClassChart.data.datasets[0].backgroundColor = classColors;
+      _adClassChart.update('none');
+    } else _adClassChart = new Chart(ccCtx, {
+      type: 'bar',
+      data: {
+        labels: classNames,
+        datasets: [{
+          label: S.lang === 'mn' ? 'Дундаж анхаарал' : 'Avg attention',
+          data: classAvgs,
+          backgroundColor: classColors,
+          borderRadius: 6,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } },
+        },
+      },
+    });
+  }
+
+  // ── 4. Class breakdown table ───────────────────────────────────────────
+  const tbody = document.getElementById('adClassTable');
+  if (tbody) {
+    if (!classNames.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-muted">—</td></tr>';
+    } else {
+      tbody.innerHTML = classNames.map(c => {
+        const r = byClass[c];
+        const avg = r.n ? Math.round(r.sum / r.n) : 0;
+        const cls = avg >= 75 ? '' : avg >= 55 ? 'med' : 'low';
+        return `<tr>
+          <td><strong>${c}</strong></td>
+          <td>${r.total}</td>
+          <td><span class="badge badge-green">${r.present}/${r.total}</span></td>
+          <td><div class="att-track" style="width:120px"><div class="att-fill ${cls}" style="width:${avg}%"></div></div>
+              <span class="text-sm" style="margin-left:8px">${avg}%</span></td>
+          <td>${r.alerts > 0 ? `<span class="badge badge-red">${r.alerts}</span>` : '<span class="text-muted">—</span>'}</td>
+        </tr>`;
+      }).join('');
+    }
+  }
+
+  // ── 5. Recent alerts ────────────────────────────────────────────────────
+  const log = document.getElementById('adAlertLog');
+  if (log) {
+    if (!alerts.length) {
+      log.innerHTML = `<p class="text-muted text-sm">${t('no_alerts')}</p>`;
+    } else {
+      log.innerHTML = alerts.slice(0, 10).map(a => {
+        const isPhone = a.alert_type === 'phone_detected';
+        const isUnk   = a.alert_type === 'unknown_person';
+        const ic = isPhone ? 'orange' : isUnk ? 'purple' : 'red';
+        const id = isPhone ? 'i-phone' : isUnk ? 'i-person-off' : 'i-alert';
+        return `<div class="notif-item">
+          <div class="notif-icon-wrap ${ic}"><svg class="icon-sm"><use href="#${id}"/></svg></div>
+          <div class="notif-body"><strong>${a.student_name}</strong><span>${alertLabel(a.alert_type)}</span></div>
+          <span class="notif-time">${fmtTime(a.timestamp)}</span>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // ── 6. Incidents over last 7 days bar chart ────────────────────────────
+  const buckets = {};
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    buckets[d.toISOString().slice(0, 10)] = 0;
+  }
+  for (const inc of incRecent) {
+    const day = (inc.timestamp || '').slice(0, 10);
+    if (day in buckets) buckets[day] += 1;
+  }
+  const incLabels = Object.keys(buckets).map(d => d.slice(5));
+  const incData   = Object.values(buckets);
+  const incCtx = document.getElementById('adIncidentsChart');
+  if (incCtx) {
+    if (_adIncChart) { _adIncChart.data.labels = incLabels; _adIncChart.data.datasets[0].data = incData; _adIncChart.update('none'); }
+    else _adIncChart = new Chart(incCtx, {
+      type: 'bar',
+      data: {
+        labels: incLabels,
+        datasets: [{
+          label: S.lang === 'mn' ? 'Хэрэг' : 'Incidents',
+          data: incData,
+          backgroundColor: '#DC2626',
+          borderRadius: 6,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+      },
+    });
+  }
+}
+
+function setText(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
 }
