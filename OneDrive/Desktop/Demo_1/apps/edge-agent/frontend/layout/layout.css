@@ -65,35 +65,53 @@
   color: rgba(255,255,255,.3);
 }
 .sb-nav {
-  padding: 4px 12px;
-  display: flex; flex-direction: column;
+  /* Defensive reset: the legacy bare `nav {}` rule used to leak white bg,
+     64px height, sticky positioning, and 32px horizontal padding into this
+     element. Even with the body>nav scoping fix, browsers may serve cached
+     CSS without the fix — these explicit values guarantee the sidebar
+     paints correctly regardless. */
+  background: transparent !important;
+  height: auto !important;
+  border: none !important;
+  box-shadow: none !important;
+  position: static !important;
+  padding: 4px 12px !important;
+  display: flex !important;
+  flex-direction: column !important;
   gap: 2px;
-  overflow-y: auto;          /* scroll if many nav items on short windows */
+  overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(255,255,255,.12) transparent;
 }
 .sb-nav::-webkit-scrollbar { width: 6px; }
 .sb-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 3px; }
 .sb-item {
-  display: flex; align-items: center; gap: 11px;
-  padding: 10px 12px;
-  border-radius: 9px;
-  font-size: .875rem; font-weight: 500;
-  color: var(--sb-text);
+  /* !important here is defensive against the legacy `nav a { padding:6px 14px;
+     color:#374151; ... }` rule from nav.css which used to leak in. */
+  display: flex !important;
+  justify-content: flex-start !important;
+  align-items: center !important;
+  gap: 11px !important;
+  padding: 10px 12px !important;
+  border-radius: 9px !important;
+  font-size: .875rem !important;
+  font-weight: 500 !important;
+  color: var(--sb-text) !important;
   cursor: pointer;
   transition: background .14s, color .14s;
   position: relative;
   text-decoration: none;
   white-space: nowrap;
+  width: 100%;
 }
 .sb-item:hover {
-  background: rgba(255,255,255,.07);
-  color: #fff;
+  background: rgba(255,255,255,.07) !important;
+  color: #fff !important;
 }
 .sb-item.active {
-  background: var(--sb-active);
-  color: #fff;
-  font-weight: 600;
+  background: var(--sb-active) !important;
+  color: #fff !important;
+  font-weight: 600 !important;
 }
 .sb-item svg { width: 17px; height: 17px; flex-shrink: 0; color: currentColor; }
 .sb-item > span {
