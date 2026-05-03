@@ -1,5 +1,7 @@
 // ── SVG icon helper ───────────────────────────────────────────────────────────
 function ico(id, cls='icon') { return `<svg class="${cls}"><use href="#${id}"/></svg>`; }
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function safeJsonAttr(value) { return esc(JSON.stringify(value == null ? '' : String(value))); }
 
 // ── i18n dictionary ──────────────────────────────────────────────────────────
 const I18N = {
@@ -201,6 +203,9 @@ const I18N = {
     no_student:'Бүртгэлтэй оюутан байхгүй',
     err_fill:'Бүх талбарыг бөглөнө үү',
     label_role:'Үүрэг',
+    enroll_form_sub:'Мэдээллийг бөглөж бүртгэнэ үү',
+    btn_video_file:'Видео файл',
+    btn_unlock:'Суллах',
   },
   en: {
     nav_home:'Home', nav_enroll:'Enroll', nav_monitor:'Monitor',
@@ -400,6 +405,9 @@ const I18N = {
     no_student:'No students enrolled',
     err_fill:'Please fill in all fields',
     label_role:'Role',
+    enroll_form_sub:'Fill in the details to register',
+    btn_video_file:'Video file',
+    btn_unlock:'Unlock',
   }
 };
 
@@ -417,11 +425,20 @@ const S = {
   user:          null,
   token:         localStorage.getItem('mergen_token') || null,
   pendingRole:   null,
+  ws:            null,
+  wsConnected:   false,
+  wsBackoff:     0,
+  wsReconnectTimer: null,
+  wsManualClose: false,
+  lastCamRunning:false,
   incFilter:     'pending',
   incTimer:      null,
   incBadgeTimer: null,
   evalTimer:     null,
   evalWasRecording: false,
+  adTimer:       null,
+  videoUploadXhr: null,
+  lastVideoFile: null,
 };
 
 // ── Translation helpers ──────────────────────────────────────────────────────
@@ -473,18 +490,8 @@ function goHome() {
 }
 
 // ── Sections scroll ───────────────────────────────────────────────────────────
-function toggleNavDD(e) {
-  e.stopPropagation();
-  const dd = document.getElementById('navSectionsDD');
-  dd.classList.toggle('open');
-}
-document.addEventListener('click', () => {
-  document.getElementById('navSectionsDD')?.classList.remove('open');
-});
-
 function scrollToSection(id, e) {
   if (e) e.preventDefault();
-  document.getElementById('navSectionsDD')?.classList.remove('open');
   const isOnLanding = document.getElementById('page-landing')?.classList.contains('active');
   if (!isOnLanding) {
     go({ preventDefault: () => {} }, '/landing');
@@ -497,16 +504,6 @@ function scrollToSection(id, e) {
 // ── Auth ──────────────────────────────────────────────────────────────────────
 function authHeader() {
   return S.token ? { 'Authorization': `Bearer ${S.token}` } : {};
-}
-
-async function apiAuth(method, url, body) {
-  const r = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json', ...authHeader() },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!r.ok) { const e = await r.json().catch(() => {}); throw new Error(e?.detail || r.statusText); }
-  return r.json();
 }
 
 function updateNav() {
@@ -664,23 +661,23 @@ async function loadUser() {
     } else {
       S.token = null; S.user = null;
       localStorage.removeItem('mergen_token');
+      disconnectEventStream();
     }
   } catch (_) {
     S.token = null; S.user = null;
     localStorage.removeItem('mergen_token');
+    disconnectEventStream();
   }
   updateNav();
 }
 
 function logout() {
+  disconnectEventStream();
   S.token = null; S.user = null;
   localStorage.removeItem('mergen_token');
+  clearPageRuntime({ stopBadge: true });
   updateNav();
   go({ preventDefault: () => {} }, '/landing');
-}
-
-function goLogin(role) {
-  go({ preventDefault: () => {} }, '/login');
 }
 
 function goAbout(e) {
@@ -691,6 +688,18 @@ function goAbout(e) {
   } else {
     go({ preventDefault: () => {} }, '/about');
   }
+}
+
+function goParentSection(e, id) {
+  if (e && typeof e.preventDefault === 'function') e.preventDefault();
+  const scroll = () => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (window.location.pathname !== '/dashboard/parent') {
+    history.pushState({}, '', '/dashboard/parent');
+    showPage('/dashboard/parent');
+    setTimeout(scroll, 150);
+    return;
+  }
+  scroll();
 }
 
 function selectLoginRole(role) {
@@ -745,6 +754,7 @@ async function doLogin() {
     document.getElementById('loginUsername').value = '';
     document.getElementById('loginPassword').value = '';
     const role = res.user.role;
+    if (role !== 'parent') { startIncidentBadgePolling(); startEventStream(); }
     if (role === 'admin') go({ preventDefault: () => {} }, '/monitor');
     else if (role === 'parent') go({ preventDefault: () => {} }, '/dashboard/parent');
     else go({ preventDefault: () => {} }, '/dashboard/teacher');
@@ -784,6 +794,7 @@ async function doSignup() {
     S.token = res.token; S.user = res.user;
     localStorage.setItem('mergen_token', res.token);
     updateNav();
+    if (role !== 'parent') { startIncidentBadgePolling(); startEventStream(); }
     if (role === 'admin') go({ preventDefault: () => {} }, '/monitor');
     else if (role === 'parent') go({ preventDefault: () => {} }, '/dashboard/parent');
     else go({ preventDefault: () => {} }, '/dashboard/teacher');
@@ -794,22 +805,49 @@ async function doSignup() {
 }
 
 // ── Routing ──────────────────────────────────────────────────────────────────
-function go(e, path) {
-  if (e && typeof e.preventDefault === 'function') e.preventDefault();
-  if (window.location.pathname === path) return;
+let attChart = null;
+let _adAttChart = null, _adClassChart = null, _adIncChart = null;
+
+function destroyChartInstances() {
+  if (attChart) { attChart.destroy(); attChart = null; }
+  if (_adAttChart) { _adAttChart.destroy(); _adAttChart = null; }
+  if (_adClassChart) { _adClassChart.destroy(); _adClassChart = null; }
+  if (_adIncChart) { _adIncChart.destroy(); _adIncChart = null; }
+}
+
+function stopIncidentBadgePolling() {
+  if (S.incBadgeTimer) {
+    clearInterval(S.incBadgeTimer);
+    S.incBadgeTimer = null;
+  }
+  ['navIncidentBadge', 'navIncidentBadgeAdmin', 'sbBadgeInc'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+}
+
+function clearPageRuntime(opts = {}) {
   clearInterval(S.pollTimer);
   clearInterval(S.monTimer);
   clearInterval(S.incTimer);
   clearInterval(S.evalTimer);
   clearInterval(S.adTimer);
   S.pollTimer = S.monTimer = S.incTimer = S.evalTimer = S.adTimer = null;
-  if (window.location.pathname === '/monitor') _setVideoSrc(false);
+  _setVideoSrc(false);
+  destroyChartInstances();
+  if (opts.stopBadge) stopIncidentBadgePolling();
+}
+
+function go(e, path) {
+  if (e && typeof e.preventDefault === 'function') e.preventDefault();
+  if (window.location.pathname === path) return;
   history.pushState({}, '', path);
   showPage(path);
 }
 window.addEventListener('popstate', () => showPage(window.location.pathname));
 
 function showPage(path) {
+  clearPageRuntime();
   applyChromeForPath(path);
   document.querySelectorAll('.page').forEach(p => {
     p.classList.remove('active');
@@ -850,6 +888,12 @@ function showPage(path) {
     showPage(fallback);
     return;
   }
+  if (['/admin','/dashboard/admin'].includes(path) && S.user && S.user.role !== 'admin') {
+    const fallback = S.user.role === 'parent' ? '/dashboard/parent' : '/dashboard/teacher';
+    history.replaceState({}, '', fallback);
+    showPage(fallback);
+    return;
+  }
   if (['/students','/enroll','/monitor','/dashboard/teacher','/dashboard/admin','/incidents','/seats','/admin','/eval'].includes(path) && S.user?.role === 'parent') {
     history.replaceState({}, '', '/dashboard/parent');
     showPage('/dashboard/parent');
@@ -863,7 +907,7 @@ function showPage(path) {
   }
 
   const examWrap = document.getElementById('navExamWrap');
-  examWrap.style.display = path === '/monitor' ? 'flex' : 'none';
+  if (examWrap) examWrap.style.display = path === '/monitor' ? 'flex' : 'none';
 
   applyI18n();
 
@@ -906,14 +950,31 @@ function toast(msg, type='info') {
   const el = document.getElementById('toast');
   const colors = { info:'#15803D', success:'#059669', error:'#DC2626', warning:'#D97706' };
   el.style.borderLeft = `3px solid ${colors[type]||colors.info}`;
-  el.innerHTML = `<svg class="icon" style="color:${colors[type]||colors.info}"><use href="#i-bell"/></svg> ${msg}`;
+  el.innerHTML = `<svg class="icon" style="color:${colors[type]||colors.info}"><use href="#i-bell"/></svg> ${esc(msg)}`;
   el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 3200);
 }
 
+function parseUtcTimestamp(ts) {
+  if (!ts) return null;
+  const s = String(ts).trim();
+  if (!s) return null;
+  const iso = s.includes('T') ? s : s.replace(' ', 'T');
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(iso);
+  return new Date(hasZone ? iso : `${iso}Z`);
+}
+
 function fmtTime(ts) {
   if (!ts) return '—';
-  return new Date(ts).toLocaleTimeString(S.lang==='mn'?'mn-MN':'en-US', {hour:'2-digit',minute:'2-digit'});
+  const d = parseUtcTimestamp(ts);
+  if (!d || isNaN(d)) return ts;
+  return d.toLocaleTimeString(S.lang==='mn'?'mn-MN':'en-US', {hour:'2-digit',minute:'2-digit'});
+}
+
+function authMediaUrl(url) {
+  if (!url || !S.token) return url || '';
+  const sep = String(url).includes('?') ? '&' : '?';
+  return `${url}${sep}token=${encodeURIComponent(S.token)}`;
 }
 
 function attColor(p) {
@@ -942,7 +1003,8 @@ function pushNotif(alert) {
   const isUnknown = alert.alert_type === 'unknown_person';
   const label     = alertLabel(alert.alert_type);
   const ts        = fmtTime(alert.timestamp);
-  const msg       = `${alert.student_name} — ${label}`;
+  const studentName = alert.student_name || 'Unknown';
+  const msg       = `${studentName} — ${label}`;
 
   if (Notification.permission === 'granted') {
     new Notification('Mergen AI ⚠️', { body: `${msg} @ ${ts}` });
@@ -960,13 +1022,13 @@ function pushNotif(alert) {
     <div class="notif-item ${cls}">
       <div class="notif-icon-wrap ${icol}"><svg class="icon-sm"><use href="#${iid}"/></svg></div>
       <div class="notif-body">
-        <strong>${alert.student_name}</strong>
-        <span>${label}</span>
+        <strong>${esc(studentName)}</strong>
+        <span>${esc(label)}</span>
       </div>
-      <span class="notif-time">${ts}</span>
+      <span class="notif-time">${esc(ts)}</span>
     </div>`;
 
-  ['teacherNotifLog','monAlertLog','adminNotifLog'].forEach(id => {
+  ['teacherNotifLog','monAlertLog','adAlertLog'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     if (el.querySelector('.text-muted')) el.innerHTML = '';
@@ -975,10 +1037,106 @@ function pushNotif(alert) {
 }
 
 async function pollAlerts() {
+  // When the WebSocket is connected, the server pushes alerts in real time —
+  // skip the catch-up poll to avoid duplicate notifications.
+  if (S.wsConnected) return;
   const alerts = await api('GET',`/api/alerts/recent?since_id=${S.lastAlertId}`).catch(()=>[]);
   if (!alerts.length) return;
   S.lastAlertId = Math.max(...alerts.map(a=>a.id));
   [...alerts].reverse().forEach(pushNotif);
+}
+
+// ── Realtime event channel ──────────────────────────────────────────────────
+//
+// One WebSocket per page connects to /ws/events and dispatches:
+//   alert_new      → pushNotif (and bumps lastAlertId)
+//   incident_new   → toast + (future) refresh review queue
+//   clip_ready     → no-op (frontend re-fetches when needed)
+//   camera_status  → applied via _onCameraStatus (replaces polling fallback)
+// Reconnects with backoff on close; falls back to HTTP polling automatically
+// because pollAlerts/cameraStatus calls remain in their existing intervals.
+function _onCameraStatus(payload) {
+  if (typeof renderFacePanel === 'function') renderFacePanel(payload.faces || []);
+  S.lastCamRunning = !!payload.running;
+}
+
+function connectEventStream() {
+  if (!S.token || !S.user || S.user.role === 'parent') return;
+  S.wsManualClose = false;
+  if (S.wsReconnectTimer) {
+    clearTimeout(S.wsReconnectTimer);
+    S.wsReconnectTimer = null;
+  }
+  if (S.ws) {
+    S.ws._mergenIntentionalClose = true;
+    try { S.ws.close(); } catch(_){}
+    S.ws = null;
+    S.wsConnected = false;
+  }
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url   = `${proto}//${location.host}/ws/events?token=${encodeURIComponent(S.token)}`;
+  let ws;
+  try { ws = new WebSocket(url); } catch(_) { _scheduleReconnect(); return; }
+  S.ws = ws;
+  ws.addEventListener('open', () => {
+    S.wsConnected = true;
+    S.wsBackoff   = 0;
+  });
+  ws.addEventListener('message', evt => {
+    let m; try { m = JSON.parse(evt.data); } catch { return; }
+    if (m.type === 'alert_new' && m.payload) {
+      const a = m.payload;
+      if (typeof a.id === 'number') S.lastAlertId = Math.max(S.lastAlertId || 0, a.id);
+      pushNotif(a);
+    } else if (m.type === 'incident_new' && m.payload) {
+      const ev = m.payload;
+      const who = (ev.involved_names || []).join(', ') || '—';
+      toast(`⚠ ${ev.label || 'INCIDENT'}: ${ev.primary_signal} (${who})`, 'warning');
+    } else if (m.type === 'camera_status' && m.payload) {
+      _onCameraStatus(m.payload);
+    }
+    // clip_ready handled lazily by review-queue refresh
+  });
+  ws.addEventListener('close', () => {
+    if (ws._mergenIntentionalClose || S.ws !== ws) return;
+    S.wsConnected = false;
+    S.ws = null;
+    if (!S.wsManualClose) _scheduleReconnect();
+  });
+  ws.addEventListener('error', () => { try { ws.close(); } catch(_){} });
+}
+
+function _scheduleReconnect() {
+  if (!S.token || !S.user || S.user.role === 'parent' || S.wsManualClose) return;
+  if (S.wsReconnectTimer) return;
+  S.wsBackoff = Math.min(((S.wsBackoff || 0) + 1), 6);
+  const delay = Math.min(1000 * 2 ** (S.wsBackoff - 1), 15000);
+  S.wsReconnectTimer = setTimeout(() => {
+    S.wsReconnectTimer = null;
+    if (!S.wsConnected) connectEventStream();
+  }, delay);
+}
+
+function disconnectEventStream() {
+  S.wsManualClose = true;
+  if (S.wsReconnectTimer) {
+    clearTimeout(S.wsReconnectTimer);
+    S.wsReconnectTimer = null;
+  }
+  if (S.ws) {
+    S.ws._mergenIntentionalClose = true;
+    try { S.ws.close(); } catch(_) {}
+  }
+  S.ws = null;
+  S.wsConnected = false;
+}
+
+function startEventStream() {
+  if (!S.token || !S.user || S.user.role === 'parent') {
+    disconnectEventStream();
+    return;
+  }
+  connectEventStream();
 }
 
 function loadExistingAlerts(logs) {
@@ -993,12 +1151,12 @@ function loadExistingAlerts(logs) {
     const cls  = isPhone?'phone':isUnknown?'unknown':'suspicious';
     return `<div class="notif-item ${cls}">
       <div class="notif-icon-wrap ${icol}"><svg class="icon-sm"><use href="#${iid}"/></svg></div>
-      <div class="notif-body"><strong>${a.student_name}</strong><span>${alertLabel(a.alert_type)}</span></div>
-      <span class="notif-time">${fmtTime(a.timestamp)}</span>
+      <div class="notif-body"><strong>${esc(a.student_name || 'Unknown')}</strong><span>${esc(alertLabel(a.alert_type))}</span></div>
+      <span class="notif-time">${esc(fmtTime(a.timestamp))}</span>
     </div>`;
   }).join('');
 
-  ['teacherNotifLog','monAlertLog','adminNotifLog'].forEach(id => {
+  ['teacherNotifLog','monAlertLog','adAlertLog'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = html || `<p class="text-muted text-sm">${t('no_alerts')}</p>`;
   });
@@ -1006,8 +1164,13 @@ function loadExistingAlerts(logs) {
 
 document.addEventListener('keydown', async e => {
   if (e.key.toLowerCase()==='p' && !e.target.matches('input,select,textarea')) {
-    await api('POST','/api/alerts/phone',{}).catch(()=>{});
-    toast(t('alert_phone')+'! (P key)', 'warning');
+    if (!S.user || S.user.role === 'parent') return;
+    try {
+      await api('POST','/api/alerts/phone',{});
+      toast(t('alert_phone')+'! (P key)', 'warning');
+    } catch (err) {
+      toast(err.message || 'Alert failed', 'error');
+    }
   }
 });
 
@@ -1046,7 +1209,7 @@ async function startEnrollCam() {
 }
 
 function stopEnrollCam() {
-  if (S.enrollStream) { S.enrollStream.getTracks().forEach(t=>t.stop()); S.enrollStream=null; }
+  if (S.enrollStream) { S.enrollStream.getTracks().forEach(tr=>tr.stop()); S.enrollStream=null; }
   const vid = document.getElementById('enrollVideo');
   if (vid) { vid.style.display='none'; vid.srcObject=null; }
   const ph = document.getElementById('camPH');
@@ -1111,7 +1274,7 @@ async function submitEnroll() {
 
   try {
     const data = await api('POST','/api/enroll',{name,class_name:cls,role,images:S.captured});
-    res.innerHTML=`<span style="color:var(--success);font-weight:600">${data.name} ${t('enroll_ok')} (${data.captures})</span>`;
+    res.innerHTML=`<span style="color:var(--success);font-weight:600">${esc(data.name)} ${t('enroll_ok')} (${esc(data.captures)})</span>`;
     S.captured = [null, null, null];
     for (let i=0; i<3; i++) {
       const box = document.getElementById(`prevBox${i}`);
@@ -1123,7 +1286,7 @@ async function submitEnroll() {
     updateUploadState();
     document.getElementById('enrollName').value='';
   } catch(e) {
-    res.innerHTML=`<span style="color:var(--danger)">${e.message||t('enroll_fail')}</span>`;
+    res.innerHTML=`<span style="color:var(--danger)">${esc(e.message || t('enroll_fail'))}</span>`;
     document.getElementById('btnEnroll').disabled=false;
   }
 }
@@ -1139,51 +1302,105 @@ async function testRecognition() {
   const fd = new FormData();
   fd.append('file', file);
   try {
-    const r    = await fetch('/api/test/recognize', {method:'POST', body:fd});
+    const r    = await fetch('/api/test/recognize', {method:'POST', headers: authHeader(), body:fd});
     const data = await r.json();
     if (data.matched) {
-      res.innerHTML = `<span style="color:var(--success);font-weight:600">✓ ${data.name} (${data.class_name}) — ${data.similarity}</span>`;
+      res.innerHTML = `<span style="color:var(--success);font-weight:600">✓ ${esc(data.name)} (${esc(data.class_name)}) — ${esc(data.similarity)}</span>`;
     } else {
-      res.innerHTML = `<span style="color:var(--danger)">✗ ${data.reason}${data.best_sim!==undefined?' (best: '+data.best_sim+')':''}</span>`;
+      res.innerHTML = `<span style="color:var(--danger)">✗ ${esc(data.reason)}${data.best_sim!==undefined?' (best: '+esc(data.best_sim)+')':''}</span>`;
     }
   } catch(e) {
-    res.innerHTML = `<span style="color:var(--danger)">Алдаа: ${e.message}</span>`;
+    res.innerHTML = `<span style="color:var(--danger)">Алдаа: ${esc(e.message)}</span>`;
   }
   input.value = '';
 }
 
-function uploadVideoFile() {
+const VIDEO_MAX_BYTES = 2 * 1024 * 1024 * 1024;       // keep in sync with backend
+const VIDEO_EXTS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
+
+function setVideoUploadProgress(p, fileName) {
+  const wrap  = document.getElementById('videoUploadProgress');
+  const bar   = document.getElementById('videoProgressBar');
+  const pct   = document.getElementById('videoProgressPct');
+  const fname = document.getElementById('videoProgressFile');
+  const meter = document.getElementById('videoProgressMeter');
+  if (wrap) wrap.style.display = 'block';
+  if (bar) bar.style.width = p + '%';
+  if (pct) pct.textContent = p + '%';
+  if (fname && fileName !== undefined) fname.textContent = fileName;
+  if (meter) meter.setAttribute('aria-valuenow', String(p));
+}
+
+function setVideoUploadActions({ retry = false, cancel = false } = {}) {
+  const retryBtn = document.getElementById('btnVideoRetry');
+  const cancelBtn = document.getElementById('btnVideoCancel');
+  if (retryBtn) retryBtn.style.display = retry ? 'inline-flex' : 'none';
+  if (cancelBtn) cancelBtn.style.display = cancel ? 'inline-flex' : 'none';
+}
+
+function finishVideoUpload({ hide = true, retry = false } = {}) {
+  const wrap = document.getElementById('videoUploadProgress');
+  const fileBtn = document.getElementById('btnVideoFile');
+  if (hide && wrap) wrap.style.display = 'none';
+  setVideoUploadActions({ retry, cancel: false });
+  if (fileBtn) fileBtn.disabled = false;
+  S.videoUploadXhr = null;
+}
+
+function cancelVideoUpload() {
+  if (S.videoUploadXhr) {
+    S.videoUploadXhr.abort();
+    return;
+  }
+  finishVideoUpload();
+}
+
+function retryVideoUpload() {
+  if (!S.lastVideoFile) return;
+  uploadVideoFile(S.lastVideoFile);
+}
+
+function uploadVideoFile(fileOverride) {
   const input = document.getElementById('videoFileInput');
-  const file  = input.files[0];
+  const file  = fileOverride || input.files[0];
   if (!file) return;
+  S.lastVideoFile = file;
+
+  const lname = (file.name || '').toLowerCase();
+  if (!VIDEO_EXTS.some(e => lname.endsWith(e))) {
+    toast('Дэмжигдэхгүй формат: ' + (file.name || 'unknown'), 'error');
+    input.value = '';
+    return;
+  }
+  if (file.size > VIDEO_MAX_BYTES) {
+    const mb = Math.round(VIDEO_MAX_BYTES / (1024 * 1024));
+    toast('Файл хэт том (' + mb + ' MB-аас бага байх ёстой)', 'error');
+    input.value = '';
+    return;
+  }
 
   const fd = new FormData();
   fd.append('file', file);
 
-  const wrap    = document.getElementById('videoUploadProgress');
-  const bar     = document.getElementById('videoProgressBar');
-  const pct     = document.getElementById('videoProgressPct');
-  const fname   = document.getElementById('videoProgressFile');
-  wrap.style.display = 'block';
-  bar.style.width    = '0%';
-  pct.textContent    = '0%';
-  fname.textContent  = file.name;
+  if (S.videoUploadXhr) S.videoUploadXhr.abort();
+  setVideoUploadProgress(0, file.name);
+  setVideoUploadActions({ retry: false, cancel: true });
   document.getElementById('btnVideoFile').disabled = true;
 
   const xhr = new XMLHttpRequest();
+  S.videoUploadXhr = xhr;
 
   xhr.upload.onprogress = e => {
     if (!e.lengthComputable) return;
     const p = Math.round(e.loaded / e.total * 100);
-    bar.style.width   = p + '%';
-    pct.textContent   = p + '%';
+    setVideoUploadProgress(p);
   };
 
   xhr.onload = () => {
-    wrap.style.display = 'none';
     input.value = '';
     if (xhr.status === 200) {
       const data = JSON.parse(xhr.responseText);
+      finishVideoUpload();
       document.getElementById('btnStartMon').style.display  = 'none';
       document.getElementById('btnVideoFile').style.display = 'none';
       document.getElementById('btnStopMon').style.display   = 'inline-flex';
@@ -1195,25 +1412,54 @@ function uploadVideoFile() {
         const err = JSON.parse(xhr.responseText);
         toast(err.detail || 'Алдаа гарлаа', 'error');
       } catch { toast('Алдаа гарлаа', 'error'); }
-      document.getElementById('btnVideoFile').disabled = false;
+      finishVideoUpload({ hide: false, retry: true });
     }
   };
 
   xhr.onerror = () => {
-    wrap.style.display = 'none';
     input.value = '';
     toast('Сүлжээний алдаа', 'error');
-    document.getElementById('btnVideoFile').disabled = false;
+    finishVideoUpload({ hide: false, retry: true });
+  };
+
+  xhr.onabort = () => {
+    input.value = '';
+    if (S.videoUploadXhr === xhr) {
+      toast(S.lang === 'mn' ? 'Upload цуцлагдлаа' : 'Upload canceled', 'info');
+      finishVideoUpload();
+    }
   };
 
   xhr.open('POST', '/api/video/upload');
+  const headers = authHeader();
+  if (headers.Authorization) xhr.setRequestHeader('Authorization', headers.Authorization);
   xhr.send(fd);
 }
 
 function _setVideoSrc(on) {
   const img = document.getElementById('videoStream');
+  if (!img) return;
   if (on) {
-    img.src = '/video_feed?t=' + Date.now();
+    if (!S.token) { img.src = ''; return; }
+    const src = () => `/video_feed?token=${encodeURIComponent(S.token)}&t=${Date.now()}`;
+    img.src = src();
+    // MJPEG streams sometimes drop on flaky networks or backend reload;
+    // auto-reconnect with backoff so the user doesn't see a broken image.
+    if (!img._mergenErrBound) {
+      img._mergenErrBound = true;
+      let attempts = 0;
+      img.addEventListener('error', () => {
+        if (!img.src || img.src.indexOf('/video_feed') === -1) return;
+        attempts = Math.min(attempts + 1, 5);
+        const delay = Math.min(1000 * 2 ** (attempts - 1), 8000);
+        setTimeout(() => {
+          if (img.src && img.src.indexOf('/video_feed') !== -1) {
+            img.src = src();
+          }
+        }, delay);
+      });
+      img.addEventListener('load', () => { attempts = 0; });
+    }
   } else {
     img.src = '';
   }
@@ -1332,16 +1578,14 @@ function renderFacePanel(faces) {
         : '';
     return `<div class="face-item" style="flex-wrap:wrap;gap:6px">
       <div class="face-led" style="background:${led}"></div>
-      <div style="flex:1"><div class="face-item-name">${f.name||'Unknown'}</div>
-        <div class="face-item-status">${status}</div></div>
+      <div style="flex:1"><div class="face-item-name">${esc(f.name || 'Unknown')}</div>
+        <div class="face-item-status">${esc(status)}</div></div>
       ${downTag}${uBadge}
     </div>`;
   }).join('');
 }
 
 // ═════════════════════ TEACHER DASHBOARD ═════════════════════════════════════
-
-let attChart=null;
 
 async function initTeacher() {
   document.getElementById('teacherDate').textContent =
@@ -1361,11 +1605,11 @@ async function initTeacher() {
 
 async function refreshTeacher() {
   const [att,hist,uniformToday,uniformStats]=await Promise.all([
-    api('GET','/api/attendance/today'),
-    api('GET','/api/attention/history'),
-    api('GET','/api/uniform/today'),
-    api('GET','/api/uniform/stats'),
-  ]).catch(()=>[null,null,null,null]);
+    api('GET','/api/attendance/today').catch(()=>null),
+    api('GET','/api/attention/history').catch(()=>null),
+    api('GET','/api/uniform/today').catch(()=>null),
+    api('GET','/api/uniform/stats').catch(()=>null),
+  ]);
   if(att){ S.cachedAtt=att; renderAttTable(att); }
   if(hist) updateChart(hist);
   if(uniformStats) document.getElementById('tUniform').textContent=uniformStats.rate+'%';
@@ -1384,7 +1628,7 @@ function renderUniformTable(rows) {
           ? `<span class="uniform-badge uniform-no">${t('uniform_no')}</span>`
           : `<span class="uniform-badge uniform-unk">${t('uniform_unk')}</span>`;
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-        <div><strong>${r.name}</strong> <span class="text-muted text-sm">${r.class_name}</span></div>
+        <div><strong>${esc(r.name)}</strong> <span class="text-muted text-sm">${esc(r.class_name)}</span></div>
         ${badge}
       </div>`;
     }).join('') + `</div>`;
@@ -1425,8 +1669,8 @@ function renderAttTable(rows) {
             : `<span class="uniform-badge uniform-unk">${t('uniform_unk')}</span>`)
       : `<span class="uniform-badge uniform-unk">${t('uniform_unk')}</span>`;
     return `<tr>
-      <td><strong>${r.name}</strong><br><span class="text-muted" style="font-size:.75rem">${r.class_name}</span></td>
-      <td><span style="font-size:.84rem;display:flex;align-items:center;gap:5px"><svg class="icon-sm" style="color:var(--muted)"><use href="#i-clock"/></svg>${fmtTime(r.arrived_at)}</span></td>
+      <td><strong>${esc(r.name)}</strong><br><span class="text-muted" style="font-size:.75rem">${esc(r.class_name)}</span></td>
+      <td><span style="font-size:.84rem;display:flex;align-items:center;gap:5px"><svg class="icon-sm" style="color:var(--muted)"><use href="#i-clock"/></svg>${esc(fmtTime(r.arrived_at))}</span></td>
       <td>
         <div class="att-wrap">
           <div class="att-track"><div class="att-fill" style="width:${r.attention_score}%;background:${c}"></div></div>
@@ -1540,7 +1784,7 @@ async function initParent() {
     document.getElementById('pAttVal').textContent=d.attention_score+'%';
     document.getElementById('pSummary').innerHTML=`
       <div style="display:flex;flex-direction:column;gap:10px">
-        <div class="flex gap8 items-center"><svg class="icon-sm" style="color:var(--muted)"><use href="#i-clock"/></svg><span>${t('p_arrived')} <strong>${fmtTime(d.arrived_at)}</strong></span></div>
+        <div class="flex gap8 items-center"><svg class="icon-sm" style="color:var(--muted)"><use href="#i-clock"/></svg><span>${t('p_arrived')} <strong>${esc(fmtTime(d.arrived_at))}</strong></span></div>
         <div class="flex gap8 items-center"><svg class="icon-sm" style="color:var(--muted)"><use href="#i-alert"/></svg><span>${t('p_alerts')} <strong>${d.alert_count}</strong></span></div>
         <div class="flex gap8 items-center"><svg class="icon-sm" style="color:var(--muted)"><use href="#i-eye"/></svg><span>${t('stat_avg_att')}: <strong style="color:${c}">${d.attention_score}%</strong></span></div>
       </div>`;
@@ -1557,7 +1801,7 @@ async function initParent() {
     pYestEl.innerHTML = yesterday.present
       ? `<div style="display:flex;flex-direction:column;gap:8px">
           <span class="badge badge-green"><svg class="icon-sm"><use href="#i-check"/></svg>${t('hist_present')}</span>
-          <div class="flex gap8 items-center text-sm"><svg class="icon-sm" style="color:var(--muted)"><use href="#i-clock"/></svg><span>${t('p_arrived')} <strong>${fmtTime(yesterday.arrived_at)}</strong></span></div>
+          <div class="flex gap8 items-center text-sm"><svg class="icon-sm" style="color:var(--muted)"><use href="#i-clock"/></svg><span>${t('p_arrived')} <strong>${esc(fmtTime(yesterday.arrived_at))}</strong></span></div>
           <div class="flex gap8 items-center text-sm"><svg class="icon-sm" style="color:var(--muted)"><use href="#i-eye"/></svg><span>${t('stat_avg_att')}: <strong style="color:${yc}">${yesterday.attention_score||0}%</strong></span></div>
         </div>`
       : `<span class="badge badge-gray">${t('hist_absent')}</span>`;
@@ -1573,7 +1817,7 @@ async function initParent() {
         const hc = attColor(r.attention_score||0);
         const label = r.days_ago === 1 ? t('yesterday_att') : r.date || `${r.days_ago}d ago`;
         return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-          <span class="text-sm" style="font-weight:600;min-width:90px">${label}</span>
+          <span class="text-sm" style="font-weight:600;min-width:90px">${esc(label)}</span>
           <span class="badge ${r.present?'badge-green':'badge-gray'}" style="font-size:.72rem">${r.present?t('hist_present'):t('hist_absent')}</span>
           ${r.present?`<span class="text-sm" style="color:${hc};font-weight:700;min-width:46px;text-align:right">${r.attention_score||0}%</span>`:'<span style="min-width:46px"></span>'}
         </div>`;
@@ -1629,6 +1873,9 @@ function renderStudentTable(rows) {
     return;
   }
   tbody.innerHTML = rows.map((s, i) => {
+    const name = esc(s.name);
+    const className = esc(s.class_name);
+    const initial = esc((s.name || '?').charAt(0).toUpperCase());
     const faceBadge = s.has_face
       ? `<span class="badge badge-green"><svg class="icon-sm"><use href="#i-check"/></svg>${t('face_yes')}</span>`
       : `<span class="badge badge-gray">${t('face_no')}</span>`;
@@ -1651,17 +1898,17 @@ function renderStudentTable(rows) {
       <td>
         <div style="display:flex;align-items:center;gap:10px">
           <div style="width:36px;height:36px;border-radius:10px;background:var(--accent-lt);color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;flex-shrink:0">
-            ${s.name.charAt(0).toUpperCase()}
+            ${initial}
           </div>
           <div>
-            <div style="font-weight:600">${s.name}</div>
+            <div style="font-weight:600">${name}</div>
             ${s.alert_count_today > 0
               ? `<span style="font-size:.72rem;color:var(--danger)">&#9679; ${s.alert_count_today} ${t('stat_alerts').toLowerCase()}</span>`
               : ''}
           </div>
         </div>
       </td>
-      <td>${s.class_name}</td>
+      <td>${className}</td>
       <td>${roleBadge}</td>
       <td>${faceBadge}</td>
       <td>${statusBadge}</td>
@@ -1675,7 +1922,7 @@ function renderStudentTable(rows) {
             </button>
           </a>
           <button class="btn btn-sm" style="background:#FEE2E2;color:var(--danger);border:1px solid #FECACA"
-                  onclick="openDeleteModal(${s.id},'${s.name.replace(/'/g,"\\'")}')">
+                  onclick="openDeleteModal(${Number(s.id)},${safeJsonAttr(s.name)})">
             <svg class="icon-sm"><use href="#i-alert"/></svg>
             <span data-i18n="btn_delete">${t('btn_delete')}</span>
           </button>
@@ -1811,7 +2058,7 @@ loadUser().then(() => {
   } else {
     showPage(path);
   }
-  if (role !== 'parent') startIncidentBadgePolling();
+  if (role !== 'parent') { startIncidentBadgePolling(); startEventStream(); }
 });
 
 // ═════════════════════ INCIDENT REVIEW QUEUE ════════════════════════════════
@@ -1844,8 +2091,8 @@ function incSignalLabel(sig) {
 
 function fmtIncidentTime(ts) {
   // SQLite timestamps come back as 'YYYY-MM-DD HH:MM:SS' in UTC by default.
-  const d = new Date(ts.replace(' ', 'T') + 'Z');
-  if (isNaN(d)) return ts;
+  const d = parseUtcTimestamp(ts);
+  if (!d || isNaN(d)) return ts;
   return d.toLocaleString(S.lang === 'mn' ? 'mn-MN' : 'en-US', {
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'
   });
@@ -1877,33 +2124,35 @@ function renderIncidentCard(inc) {
   const score   = inc.score || 0;
   const sClass  = score >= 0.75 ? 'high' : score >= 0.55 ? 'med' : 'low';
   const reviewed = inc.reviewed === 1 || inc.reviewed === true;
+  const outcome = inc.review_outcome || '';
+  const outcomeClassName = String(outcome).replace('_','-').replace(/[^a-z0-9_-]/gi, '');
   const outcomeClass = reviewed && inc.review_outcome
-    ? `reviewed reviewed-${inc.review_outcome.replace('_','-')}` : '';
+    ? `reviewed reviewed-${outcomeClassName}` : '';
 
   const namesHtml = (inc.involved_names && inc.involved_names.length)
-    ? inc.involved_names.map(n => `<strong>${n}</strong>`).join(', ')
+    ? inc.involved_names.map(n => `<strong>${esc(n)}</strong>`).join(', ')
     : `<span class="text-muted">${S.lang==='mn'?'Танигдаагүй':'Unknown'}</span>`;
 
   const concurrentTags = (inc.concurrent_signals || [])
-    .map(s => `<span class="inc-signal-tag secondary">${incSignalLabel(s)}</span>`).join('');
+    .map(s => `<span class="inc-signal-tag secondary">${esc(incSignalLabel(s))}</span>`).join('');
 
   const clipHtml = inc.video_clip_path
-    ? `<video src="${inc.video_clip_path}" controls preload="metadata" muted playsinline></video>`
+    ? `<video src="${esc(authMediaUrl(inc.video_clip_path))}" controls preload="metadata" muted playsinline></video>`
     : `<div class="inc-noclip">${S.lang==='mn'?'Видео бичлэг бэлтгэгдэж байна…':'Clip pending…'}</div>`;
 
   const actionsHtml = reviewed
-    ? `<div class="text-sm text-muted">${S.lang==='mn'?'Шийдвэрлэгдсэн':'Reviewed'}: <strong>${inc.review_outcome}</strong></div>`
+    ? `<div class="text-sm text-muted">${S.lang==='mn'?'Шийдвэрлэгдсэн':'Reviewed'}: <strong>${esc(outcome)}</strong></div>`
     : `<div class="inc-actions">
         <button class="btn btn-sm btn-danger"
-                onclick="reviewIncident(${inc.id},'confirmed')">
+                onclick="reviewIncident(${Number(inc.id)},'confirmed')">
           ${S.lang==='mn'?'Батлах':'Confirm'}
         </button>
         <button class="btn btn-sm" style="background:#ECFDF5;color:var(--success);border:1px solid #A7F3D0"
-                onclick="reviewIncident(${inc.id},'false_positive')">
+                onclick="reviewIncident(${Number(inc.id)},'false_positive')">
           ${S.lang==='mn'?'Худал дохио':'False positive'}
         </button>
         <button class="btn btn-sm btn-secondary"
-                onclick="reviewIncident(${inc.id},'inconclusive')">
+                onclick="reviewIncident(${Number(inc.id)},'inconclusive')">
           ${S.lang==='mn'?'Тодорхойгүй':'Inconclusive'}
         </button>
        </div>`;
@@ -1913,7 +2162,7 @@ function renderIncidentCard(inc) {
       ${clipHtml}
       <div class="inc-meta">
         <div class="inc-row">
-          <span class="inc-signal-tag">${incSignalLabel(inc.primary_signal)}</span>
+          <span class="inc-signal-tag">${esc(incSignalLabel(inc.primary_signal))}</span>
           ${concurrentTags}
         </div>
         <div class="inc-row">
@@ -1925,7 +2174,7 @@ function renderIncidentCard(inc) {
         <div class="text-sm">
           ${S.lang==='mn'?'Холбогдсон:':'Involved:'} ${namesHtml}
         </div>
-        <div class="text-muted text-sm">${fmtIncidentTime(inc.timestamp)}</div>
+        <div class="text-muted text-sm">${esc(fmtIncidentTime(inc.timestamp))}</div>
         ${actionsHtml}
       </div>
     </div>`;
@@ -1972,8 +2221,8 @@ async function refreshIncidentBadge() {
 
 async function loadIncDetectorState() {
   const s = await api('GET', '/api/bullying/config').catch(() => null);
-  const t = document.getElementById('incEnabledToggle');
-  if (s && t) t.checked = !!s.enabled;
+  const tog = document.getElementById('incEnabledToggle');
+  if (s && tog) tog.checked = !!s.enabled;
 }
 
 function initIncidents() {
@@ -2171,8 +2420,8 @@ function renderSeatsList() {
   el.innerHTML = SEATS.list.map((s, i) =>
     '<div class="flex items-center gap8" style="padding:6px 0;border-bottom:1px solid var(--border)">' +
       '<strong>#' + (i+1) + '</strong>' +
-      '<span>' + (s.student_name || (S.lang === 'mn' ? '(хуваарилаагүй)' : '(unassigned)')) + '</span>' +
-      '<span class="text-muted text-sm">[' + s.x1 + ',' + s.y1 + ' -> ' + s.x2 + ',' + s.y2 + ']</span>' +
+      '<span>' + esc(s.student_name || (S.lang === 'mn' ? '(хуваарилаагүй)' : '(unassigned)')) + '</span>' +
+      '<span class="text-muted text-sm">[' + esc(s.x1) + ',' + esc(s.y1) + ' -> ' + esc(s.x2) + ',' + esc(s.y2) + ']</span>' +
     '</div>'
   ).join('');
 }
@@ -2290,14 +2539,14 @@ async function refreshThresholdAdvice() {
   try {
     const r = await api('GET', '/api/bullying/threshold-suggestion');
     const rows = (r.by_signal || []).map(s =>
-      '<div>' + s.primary_signal + ': precision=' + s.precision +
-      ' (n=' + s.reviewed + ') -> suggested=' + (s.suggested_threshold !== null ? s.suggested_threshold : '-') + '</div>'
+      '<div>' + esc(s.primary_signal) + ': precision=' + esc(s.precision) +
+      ' (n=' + esc(s.reviewed) + ') -> suggested=' + esc(s.suggested_threshold !== null ? s.suggested_threshold : '-') + '</div>'
     ).join('');
     const noData = '<div class="text-muted">' + (S.lang === 'mn' ? 'Хангалттай review байхгүй' : 'No reviews yet') + '</div>';
     document.getElementById('thresholdAdvice').innerHTML =
-      '<div>Current: <strong>' + r.current_threshold + '</strong></div>' +
+      '<div>Current: <strong>' + esc(r.current_threshold) + '</strong></div>' +
       (rows || noData) +
-      '<div class="text-muted text-sm" style="margin-top:8px">' + r.advice + '</div>';
+      '<div class="text-muted text-sm" style="margin-top:8px">' + esc(r.advice) + '</div>';
   } catch {}
 }
 
@@ -2311,15 +2560,15 @@ async function refreshProfileList() {
   }));
   const html = profiles.map(p =>
     '<div class="flex items-center gap8" style="padding:8px 0;border-bottom:1px solid var(--border)">' +
-      '<strong style="width:160px">' + p.name + '</strong>' +
+      '<strong style="width:160px">' + esc(p.name) + '</strong>' +
       '<label class="flex items-center gap8">' +
         '<input type="checkbox" ' + (p.attention_disabled ? 'checked' : '') +
-        ' onchange="setProfile(' + p.id + ', \'attention_disabled\', this.checked)">' +
+        ' onchange="setProfile(' + Number(p.id) + ', \'attention_disabled\', this.checked)">' +
         '<span class="text-sm">' + (S.lang === 'mn' ? 'Анхаарлын дохио хаах' : 'Skip attention alerts') + '</span>' +
       '</label>' +
       '<label class="flex items-center gap8">' +
         '<input type="checkbox" ' + (p.distress_disabled ? 'checked' : '') +
-        ' onchange="setProfile(' + p.id + ', \'distress_disabled\', this.checked)">' +
+        ' onchange="setProfile(' + Number(p.id) + ', \'distress_disabled\', this.checked)">' +
         '<span class="text-sm">' + (S.lang === 'mn' ? 'Сэтгэл дохио хаах' : 'Skip distress alerts') + '</span>' +
       '</label>' +
     '</div>'
@@ -2399,20 +2648,21 @@ async function refreshEvalClips() {
       '<option value="' + l + '"' + (c.truth_label === l ? ' selected' : '') + '>' + l + '</option>'
     ).join('');
     const sizeKb = Math.round(c.size_bytes / 1024);
+    const filenameArg = safeJsonAttr(c.filename);
     return (
       '<div class="flex items-center gap8" style="padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">' +
-        '<video src="' + c.url + '" controls preload="metadata" muted ' +
+        '<video src="' + esc(authMediaUrl(c.url)) + '" controls preload="metadata" muted ' +
               'style="width:200px;aspect-ratio:4/3;background:#000;border-radius:6px"></video>' +
         '<div class="flex" style="flex-direction:column;gap:4px;min-width:200px">' +
-          '<strong>' + c.filename + '</strong>' +
+          '<strong>' + esc(c.filename) + '</strong>' +
           '<span class="text-muted text-sm">' + sizeKb + ' KB</span>' +
         '</div>' +
-        '<select onchange="evalSetLabel(\'' + c.filename + '\', this.value)" ' +
+        '<select onchange="evalSetLabel(' + filenameArg + ', this.value)" ' +
                 'style="padding:6px;border:1px solid var(--border);border-radius:6px">' +
           '<option value="">— ' + (S.lang==='mn'?'шошго':'label') + ' —</option>' +
           opts +
         '</select>' +
-        '<button class="btn btn-sm btn-danger" onclick="evalDeleteClip(\'' + c.filename + '\')">' +
+        '<button class="btn btn-sm btn-danger" onclick="evalDeleteClip(' + filenameArg + ')">' +
           (S.lang==='mn'?'Устгах':'Delete') +
         '</button>' +
       '</div>'
@@ -2512,8 +2762,8 @@ function renderAttentionGrid(rows) {
     return (
       '<div class="att-cell ' + cls + '">' +
         badge +
-        '<div class="att-cell-name">' + r.name + '</div>' +
-        '<div class="att-cell-val ' + valCls + '">' + score + '</div>' +
+        '<div class="att-cell-name">' + esc(r.name) + '</div>' +
+        '<div class="att-cell-val ' + valCls + '">' + esc(score) + '</div>' +
       '</div>'
     );
   }).join('');
@@ -2528,8 +2778,6 @@ function renderAttentionGrid(rows) {
 
 // ═════════════════════ ADMIN DASHBOARD ═════════════════════════════════════════
 // School-wide stats, per-class attention, incident timeline, recent alerts.
-
-let _adAttChart = null, _adClassChart = null, _adIncChart = null;
 
 async function initAdminDashboard() {
   if (S.adTimer) { clearInterval(S.adTimer); S.adTimer = null; }
@@ -2635,7 +2883,7 @@ async function refreshAdminDashboard() {
         const avg = r.n ? Math.round(r.sum / r.n) : 0;
         const cls = avg >= 75 ? '' : avg >= 55 ? 'med' : 'low';
         return `<tr>
-          <td><strong>${c}</strong></td>
+          <td><strong>${esc(c)}</strong></td>
           <td>${r.total}</td>
           <td><span class="badge badge-green">${r.present}/${r.total}</span></td>
           <td><div class="att-track" style="width:120px"><div class="att-fill ${cls}" style="width:${avg}%"></div></div>
@@ -2659,8 +2907,8 @@ async function refreshAdminDashboard() {
         const id = isPhone ? 'i-phone' : isUnk ? 'i-person-off' : 'i-alert';
         return `<div class="notif-item">
           <div class="notif-icon-wrap ${ic}"><svg class="icon-sm"><use href="#${id}"/></svg></div>
-          <div class="notif-body"><strong>${a.student_name}</strong><span>${alertLabel(a.alert_type)}</span></div>
-          <span class="notif-time">${fmtTime(a.timestamp)}</span>
+          <div class="notif-body"><strong>${esc(a.student_name || 'Unknown')}</strong><span>${esc(alertLabel(a.alert_type))}</span></div>
+          <span class="notif-time">${esc(fmtTime(a.timestamp))}</span>
         </div>`;
       }).join('');
     }

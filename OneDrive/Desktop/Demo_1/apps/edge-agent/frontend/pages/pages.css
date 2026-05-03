@@ -162,6 +162,7 @@
 .upload-progress-bar-bg { background: var(--border); border-radius: 4px; height: 7px; overflow: hidden; margin-bottom: 5px; }
 .upload-progress-bar    { background: var(--accent); height: 100%; width: 0%; border-radius: 4px; transition: width .1s linear; }
 .upload-progress-label  { font-size: .75rem; color: var(--muted); display: flex; justify-content: space-between; }
+.upload-progress-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 
 #videoStream { width: 100%; border-radius: var(--radius); border: 1px solid var(--border); display: block; background: #000; }
 

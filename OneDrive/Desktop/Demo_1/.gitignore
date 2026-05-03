@@ -10,6 +10,11 @@
 # Model weights
 *.pt
 *.task
+*.onnx
+
+# Local secrets
+.secret
+apps/edge-agent/backend/.secret
 
 # Uploads / photos
 uploads/

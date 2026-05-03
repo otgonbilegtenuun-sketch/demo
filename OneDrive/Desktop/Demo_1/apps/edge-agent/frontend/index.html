@@ -8,11 +8,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Mongolian&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=2026-04-30-admin">
-<link rel="stylesheet" href="/static/layout/layout.css?v=2026-04-30-admin">
-<link rel="stylesheet" href="/static/nav/nav.css?v=2026-04-30-admin">
-<link rel="stylesheet" href="/static/hero/hero.css?v=2026-04-30-admin">
-<link rel="stylesheet" href="/static/pages/pages.css?v=2026-04-30-admin">
+<link rel="stylesheet" href="/static/style.css?v=2026-04-30-charth">
+<link rel="stylesheet" href="/static/layout/layout.css?v=2026-04-30-charth">
+<link rel="stylesheet" href="/static/nav/nav.css?v=2026-04-30-charth">
+<link rel="stylesheet" href="/static/hero/hero.css?v=2026-04-30-charth">
+<link rel="stylesheet" href="/static/pages/pages.css?v=2026-04-30-charth">
 
 </head>
 <body>
@@ -127,9 +127,6 @@
   </symbol>
   <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-  </symbol>
-  <symbol id="i-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
   </symbol>
   <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
@@ -311,31 +308,29 @@
 <!-- Bottom-tab nav (parent on mobile only) -->
 <div class="bottom-nav" id="bottomNav">
   <div class="bn-row">
-    <a class="bn-item" href="/dashboard/parent" onclick="go(event,'/dashboard/parent')">
+    <a class="bn-item" href="/dashboard/parent" onclick="goParentSection(event,'page-parent')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
       <span data-i18n="bn_home">Нүүр</span>
     </a>
-    <a class="bn-item" href="/incidents" onclick="go(event,'/incidents')">
+    <a class="bn-item" href="#pSummary" onclick="goParentSection(event,'pSummary')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       <span data-i18n="bn_alerts">Мэдэгдэл</span>
       <span class="bn-dot" id="bnAlertDot" style="display:none"></span>
     </a>
-    <a class="bn-item" href="/dashboard/parent" onclick="go(event,'/dashboard/parent')">
+    <a class="bn-item" href="#pHistory" onclick="goParentSection(event,'pHistory')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
       <span data-i18n="bn_history">Ирц</span>
     </a>
-    <a class="bn-item" href="/dashboard/parent" onclick="go(event,'/dashboard/parent')">
+    <a class="bn-item" href="#parentProfile" onclick="goParentSection(event,'parentProfile')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       <span data-i18n="bn_profile">Профайл</span>
     </a>
   </div>
 </div>
 
-</header>
-
 <div class="content">
 <!-- ── Toast ─────────────────────────────────────────────────────────────── -->
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <!-- ═══════════════════ LANDING (full marketing page) ════════════════ -->
 <div id="page-landing" class="page">
@@ -644,17 +639,9 @@
         <h2 data-i18n="signup_h2">Бүртгүүлэх</h2>
         <p class="auth-sub" data-i18n="signup_choose_role">Үүрэгээ сонгоно уу</p>
         <div class="auth-role-grid">
-          <div class="auth-role-card" onclick="selectSignupRole('teacher')">
-            <div class="icon-box icon-box-md"><svg class="icon-xl"><use href="#i-grad"/></svg></div>
-            <span data-i18n="role_teacher">Багш</span>
-          </div>
           <div class="auth-role-card" onclick="selectSignupRole('parent')">
             <div class="icon-box icon-box-md"><svg class="icon-xl"><use href="#i-users"/></svg></div>
             <span data-i18n="role_parent">Эцэг эх</span>
-          </div>
-          <div class="auth-role-card" onclick="selectSignupRole('admin')">
-            <div class="icon-box icon-box-md"><svg class="icon-xl"><use href="#i-shield"/></svg></div>
-            <span data-i18n="role_admin">Удирдлага</span>
           </div>
         </div>
         <div class="auth-footer" style="margin-top:24px">
@@ -1072,21 +1059,16 @@
   </div>
 
   <div class="upload-progress-wrap" id="videoUploadProgress">
-    <div class="upload-progress-bar-bg">
+    <div class="upload-progress-bar-bg" id="videoProgressMeter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
       <div class="upload-progress-bar" id="videoProgressBar"></div>
     </div>
     <div class="upload-progress-label">
       <span id="videoProgressFile" class="ellip"></span>
       <span id="videoProgressPct">0%</span>
     </div>
-  </div>
-  <div class="upload-progress-wrap" id="videoUploadProgress">
-    <div class="upload-progress-bar-bg">
-      <div class="upload-progress-bar" id="videoProgressBar"></div>
-    </div>
-    <div class="upload-progress-label">
-      <span id="videoProgressFile" style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:160px"></span>
-      <span id="videoProgressPct">0%</span>
+    <div class="upload-progress-actions">
+      <button class="btn btn-secondary btn-sm" id="btnVideoRetry" onclick="retryVideoUpload()" style="display:none">Retry</button>
+      <button class="btn btn-ghost btn-sm" id="btnVideoCancel" onclick="cancelVideoUpload()">Cancel</button>
     </div>
   </div>
 
@@ -1312,7 +1294,7 @@
       <p data-i18n="parent_sub">Хүүхдийнхээ ирц, анхаарлын тойм</p>
     </div>
   </div>
-  <div class="hero-banner mb20" style="max-width:720px">
+  <div class="hero-banner mb20" id="parentProfile" style="max-width:720px">
     <div class="hero-row">
       <div class="hero-avatar" id="pAvatar">—</div>
       <div style="flex:1;min-width:0">
@@ -1709,6 +1691,6 @@
 </div><!-- /.content -->
 </main><!-- /.main-area -->
 
-<script src="/static/app.js?v=2026-04-30-admin"></script>
+<script src="/static/app.js?v=2026-04-30-charth"></script>
 </body>
 </html>

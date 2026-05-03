@@ -9,6 +9,8 @@ import threading
 import random
 import hashlib
 import secrets
+import base64
+import hmac
 from datetime import date, datetime
 from log_setup import get_logger
 log = get_logger(__name__)
@@ -123,6 +125,8 @@ def init_db():
     _migrate_alerts(conn)
     _migrate_bullying_incidents(conn)
     _migrate_students_profile(conn)
+    _migrate_camera_id(conn)
+    _ensure_indexes(conn)
     _seed_demo_data(conn)
     _seed_demo_users(conn)
 
@@ -148,6 +152,28 @@ def _migrate_students_profile(conn: sqlite3.Connection):
     conn.commit()
 
 
+def _migrate_camera_id(conn: sqlite3.Connection):
+    """Add camera_id (and classroom_id) to event tables for v0.3 multi-camera.
+
+    Today the system has a single camera and writes default 1; the columns are
+    added now so the schema is forward-compatible. Adding columns to existing
+    rows in SQLite is a fast metadata-only operation."""
+    targets = ["alerts", "attention_log", "attendance",
+               "uniform_log", "bullying_incidents"]
+    for tbl in targets:
+        try:
+            cols = [c[1] for c in conn.execute(f"PRAGMA table_info({tbl})").fetchall()]
+            if not cols:
+                continue
+            if "camera_id" not in cols:
+                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN camera_id INTEGER NOT NULL DEFAULT 1")
+            if "classroom_id" not in cols:
+                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN classroom_id INTEGER NOT NULL DEFAULT 1")
+        except Exception as e:
+            log.warning(f"[Mergen AI] camera_id migration on {tbl}: {e}")
+    conn.commit()
+
+
 def _migrate_alerts(conn: sqlite3.Connection):
     """Make alerts.student_id nullable if the old NOT NULL schema exists."""
     info = conn.execute("PRAGMA table_info(alerts)").fetchall()
@@ -170,6 +196,31 @@ def _migrate_alerts(conn: sqlite3.Connection):
             conn.commit()
             log.warning("[Mergen AI] Migrated alerts table: student_id is now nullable")
             break
+
+
+def _ensure_indexes(conn: sqlite3.Connection):
+    """Create indexes used by polling dashboards and date-scoped reports."""
+    conn.executescript("""
+        CREATE INDEX IF NOT EXISTS idx_students_role_name
+            ON students(role, name);
+        CREATE INDEX IF NOT EXISTS idx_attendance_date_student
+            ON attendance(date, student_id);
+        CREATE INDEX IF NOT EXISTS idx_alerts_date_id
+            ON alerts(timestamp, id);
+        CREATE INDEX IF NOT EXISTS idx_alerts_student_date
+            ON alerts(student_id, timestamp);
+        CREATE INDEX IF NOT EXISTS idx_attention_log_timestamp
+            ON attention_log(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_uniform_log_student_timestamp
+            ON uniform_log(student_id, timestamp);
+        CREATE INDEX IF NOT EXISTS idx_bullying_timestamp
+            ON bullying_incidents(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_bullying_review_timestamp
+            ON bullying_incidents(reviewed, timestamp);
+        CREATE INDEX IF NOT EXISTS idx_classroom_seats_class
+            ON classroom_seats(class_name);
+    """)
+    conn.commit()
 
 
 def _seed_demo_data(conn: sqlite3.Connection):
@@ -282,23 +333,37 @@ def log_attention(student_id: int, student_name: str, is_attentive: bool):
     conn.commit()
 
 
-def save_alert(student_id: int, student_name: str, alert_type: str):
+def save_alert(student_id: int, student_name: str, alert_type: str) -> dict:
+    """Insert an alert and return the saved row (id, name, type, timestamp)
+       so callers can immediately publish it without a follow-up query."""
     conn = get_db()
-    conn.execute(
+    cur = conn.execute(
         "INSERT INTO alerts (student_id, student_name, alert_type) VALUES (?, ?, ?)",
         (student_id, student_name, alert_type),
     )
     conn.commit()
+    row = conn.execute(
+        "SELECT id, student_id, student_name, alert_type, timestamp FROM alerts WHERE id=?",
+        (cur.lastrowid,),
+    ).fetchone()
+    return dict(row) if row else {"id": cur.lastrowid, "student_id": student_id,
+                                  "student_name": student_name, "alert_type": alert_type}
 
 
-def save_unknown_alert(alert_type: str = "unknown_person"):
+def save_unknown_alert(alert_type: str = "unknown_person") -> dict:
     """Save an alert for an unrecognised face (no student_id)."""
     conn = get_db()
-    conn.execute(
+    cur = conn.execute(
         "INSERT INTO alerts (student_id, student_name, alert_type) VALUES (NULL, ?, ?)",
         ("Unknown", alert_type),
     )
     conn.commit()
+    row = conn.execute(
+        "SELECT id, student_id, student_name, alert_type, timestamp FROM alerts WHERE id=?",
+        (cur.lastrowid,),
+    ).fetchone()
+    return dict(row) if row else {"id": cur.lastrowid, "student_id": None,
+                                  "student_name": "Unknown", "alert_type": alert_type}
 
 
 def save_bullying_incident(primary_signal: str, concurrent_signals: list,
@@ -326,7 +391,8 @@ def get_recent_bullying_incidents(since_id: int = 0, limit: int = 50):
     conn = get_db()
     rows = conn.execute(
         """SELECT id, timestamp, primary_signal, concurrent_signals,
-                  involved_names, score, duration_s, reviewed, review_outcome
+                  involved_names, score, duration_s, reviewed, review_outcome,
+                  video_clip_path
            FROM bullying_incidents
            WHERE id > ?
            ORDER BY id DESC LIMIT ?""",
@@ -530,10 +596,12 @@ def delete_student(student_id: int) -> bool:
     if not exists:
         return False
     # Cascade delete related records
-    conn.execute("DELETE FROM attendance    WHERE student_id=?", (student_id,))
-    conn.execute("DELETE FROM alerts        WHERE student_id=?", (student_id,))
-    conn.execute("DELETE FROM attention_log WHERE student_id=?", (student_id,))
-    conn.execute("DELETE FROM students      WHERE id=?",         (student_id,))
+    conn.execute("DELETE FROM attendance      WHERE student_id=?", (student_id,))
+    conn.execute("DELETE FROM alerts          WHERE student_id=?", (student_id,))
+    conn.execute("DELETE FROM attention_log   WHERE student_id=?", (student_id,))
+    conn.execute("DELETE FROM uniform_log     WHERE student_id=?", (student_id,))
+    conn.execute("DELETE FROM classroom_seats WHERE student_id=?", (student_id,))
+    conn.execute("DELETE FROM students        WHERE id=?",         (student_id,))
     conn.commit()
     return True
 
@@ -635,18 +703,51 @@ def get_first_student():
 
 # ── User auth ────────────────────────────────────────────────────────────────
 
+_PBKDF2_ITERATIONS = 200_000
+
+
+def _b64(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode().rstrip("=")
+
+
+def _unb64(data: str) -> bytes:
+    pad = "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(data + pad)
+
+
 def _hash_password(password: str) -> str:
-    salt = secrets.token_hex(16)
-    h = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
-    return f"{salt}:{h}"
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt,
+        _PBKDF2_ITERATIONS,
+    )
+    return f"pbkdf2_sha256${_PBKDF2_ITERATIONS}${_b64(salt)}${_b64(digest)}"
 
 
 def _verify_password(password: str, stored: str) -> bool:
     try:
-        salt, h = stored.split(":", 1)
-        return hashlib.sha256(f"{salt}{password}".encode()).hexdigest() == h
+        if stored.startswith("pbkdf2_sha256$"):
+            _, iterations, salt, expected = stored.split("$", 3)
+            digest = hashlib.pbkdf2_hmac(
+                "sha256",
+                password.encode("utf-8"),
+                _unb64(salt),
+                int(iterations),
+            )
+            return hmac.compare_digest(_b64(digest), expected)
+
+        # Legacy format kept for existing local demo DBs: salt:sha256(salt+password)
+        salt, expected = stored.split(":", 1)
+        digest = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+        return hmac.compare_digest(digest, expected)
     except Exception:
         return False
+
+
+def _needs_password_rehash(stored: str) -> bool:
+    return not (stored or "").startswith("pbkdf2_sha256$")
 
 
 def _seed_demo_users(conn: sqlite3.Connection):
@@ -689,6 +790,12 @@ def authenticate_user(username: str, password: str):
         return None
     if not _verify_password(password, row["password_hash"]):
         return None
+    if _needs_password_rehash(row["password_hash"]):
+        conn.execute(
+            "UPDATE users SET password_hash=? WHERE id=?",
+            (_hash_password(password), row["id"]),
+        )
+        conn.commit()
     return dict(row)
 
 

@@ -16,16 +16,18 @@ from typing import Any, Dict, List, Optional
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Header
+from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Header, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 import threading
 
 import database as db
 from camera import (
     FEATURE_FLAGS,
+    CameraManager,
     CameraProcessor,
     process_enrollment_image,
     set_clips_dir,
@@ -36,7 +38,33 @@ log = get_logger(__name__)
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
-_SECRET = "mergen-ai-secret-2024-xk9"
+def _load_secret() -> str:
+    """Load HMAC secret from $MERGEN_SECRET, else from a per-install file
+    persisted next to the DB. Avoids hard-coding a shared secret in source."""
+    env = os.environ.get("MERGEN_SECRET")
+    if env and len(env) >= 16:
+        return env
+    base = os.path.dirname(os.path.abspath(__file__))
+    secret_file = os.path.join(base, ".secret")
+    try:
+        if os.path.exists(secret_file):
+            with open(secret_file, "r", encoding="utf-8") as f:
+                s = f.read().strip()
+                if len(s) >= 16:
+                    return s
+        import secrets as _sec
+        s = _sec.token_urlsafe(32)
+        with open(secret_file, "w", encoding="utf-8") as f:
+            f.write(s)
+        try: os.chmod(secret_file, 0o600)
+        except OSError: pass
+        return s
+    except Exception:
+        import secrets as _sec
+        return _sec.token_urlsafe(32)
+
+
+_SECRET = _load_secret()
 
 
 def _create_token(user_id: int, role: str) -> str:
@@ -65,12 +93,157 @@ def _get_token_optional(authorization: Optional[str] = Header(None)):
         return None
     return _verify_token(authorization[7:])
 
+
+def _token_from_sources(authorization: Optional[str] = None,
+                        token: Optional[str] = None):
+    if authorization and authorization.startswith("Bearer "):
+        return _verify_token(authorization[7:])
+    if token:
+        return _verify_token(token)
+    return None
+
+
+def _get_token_required(token_payload=Depends(_get_token_optional)):
+    if not token_payload:
+        raise HTTPException(401, detail="Нэвтрээгүй байна")
+    user = db.get_user_by_id(token_payload.get("id"))
+    if not user:
+        raise HTTPException(401, detail="Хэрэглэгч олдсонгүй")
+    token_payload["role"] = user["role"]
+    token_payload["student_id"] = user.get("student_id")
+    return token_payload
+
+
+def require_roles(*roles: str):
+    allowed = set(roles)
+
+    def _dep(token_payload=Depends(_get_token_required)):
+        if allowed and token_payload.get("role") not in allowed:
+            raise HTTPException(403, detail="Энэ үйлдэлд эрх хүрэхгүй байна")
+        return token_payload
+
+    return _dep
+
+
+def _require_ws_role(ws: WebSocket, *roles: str):
+    payload = _verify_token(ws.query_params.get("token") or "")
+    if not payload:
+        return None
+    user = db.get_user_by_id(payload.get("id"))
+    if not user or user.get("role") not in set(roles):
+        return None
+    payload["role"] = user["role"]
+    payload["student_id"] = user.get("student_id")
+    return payload
+
+
+def _clean_text(value: Optional[str], field: str, max_len: int = 80) -> str:
+    value = (value or "").strip()
+    if not value:
+        raise HTTPException(400, f"{field} is required")
+    if len(value) > max_len:
+        raise HTTPException(400, f"{field} must be <= {max_len} characters")
+    if any(ord(ch) < 32 for ch in value):
+        raise HTTPException(400, f"{field} contains invalid characters")
+    return value
+
+
+def _clean_username(value: Optional[str]) -> str:
+    value = _clean_text(value, "username", 40)
+    if len(value) < 3:
+        raise HTTPException(400, "username must be at least 3 characters")
+    if not all(ch.isalnum() or ch in ("_", ".", "-") for ch in value):
+        raise HTTPException(400, "username may only use letters, numbers, _, ., -")
+    return value
+
+
+def _student_exists(student_id: Optional[int]) -> bool:
+    if not student_id:
+        return False
+    conn = db.get_db()
+    return conn.execute(
+        "SELECT 1 FROM students WHERE id=? AND role='student'",
+        (student_id,),
+    ).fetchone() is not None
+
+
+def _safe_student_photo_dir(name: str) -> tuple[str, str]:
+    safe = "".join(ch if ch.isalnum() or ch in (" ", "_", "-", ".") else "_" for ch in name)
+    safe = safe.strip(" .")[:80] or f"student_{int(time.time())}"
+    root = os.path.realpath(PHOTOS_DIR)
+    path = os.path.realpath(os.path.join(root, safe))
+    if path != root and not path.startswith(root + os.sep):
+        raise HTTPException(400, "invalid student name")
+    os.makedirs(path, exist_ok=True)
+    return path, safe
+
 # ── App & camera ──────────────────────────────────────────────────────────────
 
 _BASE = os.path.dirname(os.path.abspath(__file__))
 
 app    = FastAPI(title="Mergen AI")
 camera = CameraProcessor()
+camera_manager = CameraManager()
+camera_manager.register(camera, camera_id=1, classroom_id=1, name="Camera 1")
+
+
+# ── Event bus (in-process pub-sub for WebSocket fan-out) ──────────────────────
+#
+# Camera-thread code calls EVENT_BUS.publish() to push events; subscribers are
+# asyncio.Queue instances owned by each connected WebSocket. The bus is
+# thread-safe: publish hops onto the asyncio loop with call_soon_threadsafe.
+class _EventBus:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._subs: List["asyncio.Queue"] = []
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def attach_loop(self, loop: asyncio.AbstractEventLoop):
+        self._loop = loop
+
+    def subscribe(self) -> "asyncio.Queue":
+        q: asyncio.Queue = asyncio.Queue(maxsize=64)
+        with self._lock:
+            self._subs.append(q)
+        return q
+
+    def unsubscribe(self, q: "asyncio.Queue"):
+        with self._lock:
+            try: self._subs.remove(q)
+            except ValueError: pass
+
+    def publish(self, event_type: str, payload: dict):
+        """Thread-safe: callable from any thread (camera, clip writer, FastAPI)."""
+        if not self._loop:
+            return
+        msg = {"type": event_type, "payload": payload, "ts": time.time()}
+        with self._lock:
+            subs = list(self._subs)
+        for q in subs:
+            try:
+                self._loop.call_soon_threadsafe(_safe_put, q, msg)
+            except RuntimeError:
+                # loop closed (during shutdown) — silently drop
+                pass
+
+
+def _safe_put(q: "asyncio.Queue", msg: dict):
+    """Drop oldest if subscriber is full so a slow client doesn't pin memory."""
+    try:
+        q.put_nowait(msg)
+    except asyncio.QueueFull:
+        try: q.get_nowait()
+        except asyncio.QueueEmpty: pass
+        try: q.put_nowait(msg)
+        except asyncio.QueueFull: pass
+
+
+EVENT_BUS = _EventBus()
+
+
+@app.on_event("startup")
+async def _attach_event_bus_loop():
+    EVENT_BUS.attach_loop(asyncio.get_running_loop())
 
 HTML_FILE    = os.path.join(_BASE, "..", "frontend", "index.html")
 FRONTEND_DIR = os.path.join(_BASE, "..", "frontend")
@@ -84,8 +257,6 @@ os.makedirs(ICONS_DIR,   exist_ok=True)
 os.makedirs(CLIPS_DIR,   exist_ok=True)
 set_clips_dir(CLIPS_DIR)
 
-app.mount("/photos", StaticFiles(directory=PHOTOS_DIR), name="photos")
-app.mount("/clips",  StaticFiles(directory=CLIPS_DIR),  name="clips")
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 # NOTE: /icons is also registered as an explicit route below (more reload-friendly)
 
@@ -98,11 +269,73 @@ def serve_html():
 async def serve_icon(filename: str):
     """Serve GIF icons from frontend/icons/ — explicit route avoids mount restart issues."""
     import mimetypes
-    path = os.path.join(ICONS_DIR, filename)
+    path = os.path.realpath(os.path.join(ICONS_DIR, os.path.basename(filename)))
+    root = os.path.realpath(ICONS_DIR)
+    if path != root and not path.startswith(root + os.sep):
+        raise HTTPException(400, detail="Invalid icon path")
     if not os.path.isfile(path):
         raise HTTPException(404, detail=f"Icon not found: {filename}")
     mime, _ = mimetypes.guess_type(path)
     return FileResponse(path, media_type=mime or "image/gif")
+
+
+def _require_media_roles(token: Optional[str],
+                         authorization: Optional[str],
+                         *roles: str):
+    payload = _token_from_sources(authorization, token)
+    if not payload:
+        raise HTTPException(401, detail="Нэвтрээгүй байна")
+    user = db.get_user_by_id(payload.get("id"))
+    if not user:
+        raise HTTPException(401, detail="Хэрэглэгч олдсонгүй")
+    if roles and user.get("role") not in set(roles):
+        raise HTTPException(403, detail="Энэ файлд хандах эрх хүрэхгүй байна")
+    return user
+
+
+def _safe_media_response(root_dir: str,
+                         requested_path: str,
+                         allowed_exts: set[str]):
+    clean = (requested_path or "").replace("\\", "/").lstrip("/")
+    if not clean or any(part in ("", ".", "..") for part in clean.split("/")):
+        raise HTTPException(400, detail="Invalid media path")
+    root = os.path.realpath(root_dir)
+    path = os.path.realpath(os.path.join(root, clean))
+    if not path.startswith(root + os.sep):
+        raise HTTPException(400, detail="Invalid media path")
+    if os.path.splitext(path)[1].lower() not in allowed_exts:
+        raise HTTPException(404, detail="Media not found")
+    if not os.path.isfile(path):
+        raise HTTPException(404, detail="Media not found")
+    return FileResponse(path)
+
+
+@app.get("/photos/{file_path:path}")
+async def serve_photo(file_path: str,
+                      token: Optional[str] = None,
+                      authorization: Optional[str] = Header(None)):
+    _require_media_roles(token, authorization, "teacher", "admin")
+    return _safe_media_response(PHOTOS_DIR, file_path, {".jpg", ".jpeg", ".png", ".webp"})
+
+
+@app.get("/clips/{filename}")
+async def serve_incident_clip(filename: str,
+                              token: Optional[str] = None,
+                              authorization: Optional[str] = Header(None)):
+    _require_media_roles(token, authorization, "teacher", "admin")
+    return _safe_media_response(CLIPS_DIR, filename, {".mp4", ".webm", ".mov"})
+
+
+# ── Alert publishing helpers ──────────────────────────────────────────────────
+
+def _emit_alert(student_id: int, student_name: str, alert_type: str):
+    row = db.save_alert(student_id, student_name, alert_type)
+    EVENT_BUS.publish("alert_new", row)
+
+
+def _emit_unknown_alert(alert_type: str = "unknown_person"):
+    row = db.save_unknown_alert(alert_type)
+    EVENT_BUS.publish("alert_new", row)
 
 
 # ── Recognition callback (camera thread, every 2 s) ──────────────────────────
@@ -149,7 +382,7 @@ def _on_faces_recognized(face_data: list) -> set:
 
         if camera.exam_mode and sideways and not skip_attention:
             if _should_emit_alert(student["name"], "suspicious_glance"):
-                db.save_alert(student["id"], student["name"], "suspicious_glance")
+                _emit_alert(student["id"], student["name"], "suspicious_glance")
                 log.warning(f"[ALERT] {student['name']} suspicious glance (sim={sim:.3f})")
 
     return matched_indices
@@ -162,7 +395,7 @@ def _on_unknown_face(face_idx: int):
     if now - _last_unknown_alert < _UNKNOWN_COOLDOWN:
         return
     _last_unknown_alert = now
-    db.save_unknown_alert("unknown_person")
+    _emit_unknown_alert("unknown_person")
     log.warning(f"[ALERT] Unknown person detected in exam mode (face slot #{face_idx})")
 
 
@@ -208,11 +441,9 @@ def _on_phone_suspect(name: str):
     conn = db.get_db()
     row  = conn.execute("SELECT id FROM students WHERE name=?", (name,)).fetchone()
     if row:
-        db.save_alert(row["id"], name, "phone_detected")
+        _emit_alert(row["id"], name, "phone_detected")
     else:
-        first = db.get_first_student()
-        if first:
-            db.save_alert(first["id"], name, "phone_detected")
+        _emit_unknown_alert("phone_detected")
     log.warning(f"[ALERT] {name} phone/down-gaze detected")
 
 
@@ -224,15 +455,24 @@ def _save_review_incident(event: dict, label: str = "INCIDENT") -> int:
         score              = event.get("score", 0.0),
         duration_s         = event.get("duration_s", 0.0),
     )
-    print(f"[{label}] flag #{iid}: {event.get('primary_signal')} "
-          f"score={event.get('score')} names={event.get('involved_names')}")
+    log.info(f"[{label}] flag #{iid}: {event.get('primary_signal')} "
+             f"score={event.get('score')} names={event.get('involved_names')}")
+    EVENT_BUS.publish("incident_new", {
+        "id":                 iid,
+        "label":              label,
+        "primary_signal":     event.get("primary_signal", "unknown"),
+        "concurrent_signals": event.get("concurrent_signals", []),
+        "involved_names":     event.get("involved_names", []),
+        "score":              event.get("score", 0.0),
+        "duration_s":         event.get("duration_s", 0.0),
+    })
     center_ts = float(event.get("timestamp", time.time()))
-    threading.Thread(
-        target=_dump_incident_clip,
-        args=(iid, center_ts, float(event.get("clip_pre_s", 5.0)),
-              float(event.get("clip_post_s", 10.0))),
-        daemon=True,
-    ).start()
+    pre_s  = float(event.get("clip_pre_s",  5.0))
+    post_s = float(event.get("clip_post_s", 10.0))
+    camera.enqueue_clip(
+        center_ts, pre_s=pre_s, post_s=post_s,
+        on_done=lambda path, _iid=iid: _finalize_incident_clip(_iid, path),
+    )
     return iid
 
 
@@ -256,14 +496,12 @@ def _on_safety_incident(event: dict):
         log.error(f"[SAFETY] save error: {e}")
 
 
-def _dump_incident_clip(incident_id: int, center_ts: float,
-                        pre_s: float = 5.0, post_s: float = 10.0):
-    """Background: write the ring-buffer clip and update the DB row."""
+def _finalize_incident_clip(incident_id: int, path: Optional[str]):
+    """Called from the camera clip-writer thread once dump_clip finishes.
+       Renames the file to a stable URL and updates the DB row."""
+    if not path:
+        return
     try:
-        path = camera.dump_clip(center_ts, pre_s=pre_s, post_s=post_s)
-        if not path:
-            return
-        # Rename to use the incident id so the URL is stable
         final_name = f"incident_{incident_id}.mp4"
         final_path = os.path.join(CLIPS_DIR, final_name)
         try:
@@ -275,9 +513,10 @@ def _dump_incident_clip(incident_id: int, center_ts: float,
             final_name = os.path.basename(path)
         url = f"/clips/{final_name}"
         db.update_bullying_clip_path(incident_id, url)
+        EVENT_BUS.publish("clip_ready", {"incident_id": incident_id, "url": url})
         log.info(f"[BULLYING] clip #{incident_id} → {url}")
     except Exception as e:
-        log.error(f"[BULLYING] clip dump error #{incident_id}: {e}")
+        log.error(f"[BULLYING] clip finalize error #{incident_id}: {e}")
 
 
 camera.on_recognition       = _on_faces_recognized
@@ -313,13 +552,26 @@ def _load_safety_config() -> dict:
 def _save_safety_config(config: dict) -> dict:
     out = dict(DEFAULT_SAFETY_CONFIG)
     out.update({k: v for k, v in (config or {}).items() if k in out})
+    for key in ("school_start", "school_end"):
+        try:
+            hh, mm = str(out[key]).split(":", 1)
+            if not (0 <= int(hh) <= 23 and 0 <= int(mm) <= 59):
+                raise ValueError
+            out[key] = f"{int(hh):02d}:{int(mm):02d}"
+        except Exception:
+            raise HTTPException(400, f"{key} must be HH:MM")
+    if len(out.get("restricted_zones", [])) > 20:
+        raise HTTPException(400, "restricted_zones max is 20")
     zones = []
     for z in out.get("restricted_zones", []):
         try:
+            x1, y1, x2, y2 = int(z["x1"]), int(z["y1"]), int(z["x2"]), int(z["y2"])
+            if min(x1, y1, x2, y2) < 0 or x2 <= x1 or y2 <= y1:
+                continue
             zones.append({
-                "name": str(z.get("name") or "restricted"),
-                "x1": int(z["x1"]), "y1": int(z["y1"]),
-                "x2": int(z["x2"]), "y2": int(z["y2"]),
+                "name": _clean_text(str(z.get("name") or "restricted"), "zone.name", 60),
+                "x1": x1, "y1": y1,
+                "x2": x2, "y2": y2,
                 "enabled": bool(z.get("enabled", True)),
             })
         except Exception:
@@ -409,7 +661,7 @@ async def page_incidents():        return serve_html()
 async def page_seats():            return serve_html()
 
 @app.get("/admin")
-async def page_admin():            return serve_html()
+async def page_admin_config():     return serve_html()
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -429,7 +681,10 @@ class SignupBody(BaseModel):
 
 @app.post("/api/auth/login")
 async def auth_login(body: LoginBody):
-    user = db.authenticate_user(body.username, body.password)
+    username = _clean_username(body.username)
+    if not body.password or len(body.password) > 128:
+        raise HTTPException(400, detail="invalid password")
+    user = db.authenticate_user(username, body.password)
     if not user:
         raise HTTPException(401, detail="Нэвтрэх нэр эсвэл нууц үг буруу байна")
     token = _create_token(user["id"], user["role"])
@@ -447,15 +702,25 @@ async def auth_login(body: LoginBody):
 
 @app.post("/api/auth/signup")
 async def auth_signup(body: SignupBody):
-    if db.username_exists(body.username):
+    username = _clean_username(body.username)
+    if not body.password or len(body.password) < 8 or len(body.password) > 128:
+        raise HTTPException(400, detail="password must be 8..128 characters")
+    signup_role = (body.role or "parent").strip()
+    if signup_role != "parent":
+        raise HTTPException(400, detail="self signup is parent-only")
+    full_name = _clean_text(body.full_name, "full_name", 120) if body.full_name else None
+    student_id = body.student_id
+    if not _student_exists(student_id):
+        raise HTTPException(400, detail="parent signup requires a valid student")
+
+    if db.username_exists(username):
         raise HTTPException(400, detail="Энэ нэвтрэх нэр аль хэдийн бүртгэлтэй байна")
-    signup_role = body.role if body.role in ("teacher", "parent", "admin") else "parent"
     uid = db.create_user(
-        username=body.username,
+        username=username,
         password=body.password,
         role=signup_role,
-        student_id=body.student_id if signup_role == "parent" else None,
-        full_name=body.full_name,
+        student_id=student_id,
+        full_name=full_name,
     )
     user = db.get_user_by_id(uid)
     token = _create_token(uid, signup_role)
@@ -472,7 +737,7 @@ async def auth_signup(body: SignupBody):
 
 
 @app.get("/api/auth/me")
-async def auth_me(token_payload=Depends(_get_token_optional)):
+async def auth_me(token_payload=Depends(_get_token_required)):
     if not token_payload:
         raise HTTPException(401, detail="Нэвтрээгүй байна")
     user = db.get_user_by_id(token_payload["id"])
@@ -496,33 +761,47 @@ async def students_for_signup():
 # ── Video stream ──────────────────────────────────────────────────────────────
 
 @app.get("/video_feed")
-async def video_feed():
+async def video_feed(request: Request,
+                     token: Optional[str] = None,
+                     authorization: Optional[str] = Header(None)):
+    payload = _token_from_sources(authorization, token)
+    user = db.get_user_by_id(payload.get("id")) if payload else None
+    if not user or user.get("role") != "admin":
+        raise HTTPException(401, detail="Нэвтрээгүй байна")
+
     async def _stream():
         _ph = None  # cached placeholder frame bytes
-        while True:
-            frame = camera.get_frame()
-            if frame is None:
-                if _ph is None:
-                    ph = np.zeros((480, 640, 3), dtype=np.uint8)
-                    cv2.rectangle(ph, (0, 0), (640, 480), (240, 242, 247), -1)
-                    cv2.putText(ph, "Mergen AI", (195, 210),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1.1, (79, 70, 229), 2)
-                    cv2.putText(ph, "Камер эхлүүлэх товчийг дарна уу", (115, 260),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (120, 120, 140), 1)
-                    _, buf = cv2.imencode(".jpg", ph, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                    _ph = buf.tobytes()
-                data = _ph
-            else:
-                _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                data = buf.tobytes()
+        try:
+            while True:
+                # Stop encoding if the client navigated away — otherwise we keep
+                # JPEG-compressing forever, burning CPU per disconnected viewer.
+                if await request.is_disconnected():
+                    return
+                frame = camera.get_frame()
+                if frame is None:
+                    if _ph is None:
+                        ph = np.zeros((480, 640, 3), dtype=np.uint8)
+                        cv2.rectangle(ph, (0, 0), (640, 480), (240, 242, 247), -1)
+                        cv2.putText(ph, "Mergen AI", (195, 210),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1.1, (79, 70, 229), 2)
+                        cv2.putText(ph, "Камер эхлүүлэх товчийг дарна уу", (115, 260),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (120, 120, 140), 1)
+                        _, buf = cv2.imencode(".jpg", ph, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                        _ph = buf.tobytes()
+                    data = _ph
+                else:
+                    _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                    data = buf.tobytes()
 
-            yield (
-                b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n"
-                + data
-                + b"\r\n"
-            )
-            await asyncio.sleep(0.066)
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n"
+                    + data
+                    + b"\r\n"
+                )
+                await asyncio.sleep(0.066)
+        except (asyncio.CancelledError, GeneratorExit):
+            return
 
     return StreamingResponse(
         _stream(),
@@ -534,7 +813,7 @@ async def video_feed():
 # ── Camera control ────────────────────────────────────────────────────────────
 
 @app.post("/api/camera/start")
-async def camera_start():
+async def camera_start(_=Depends(require_roles("admin"))):
     ok = camera.start()
     if not ok:
         raise HTTPException(503, detail="Камер нээгдсэнгүй. Өөр програм ашиглаж байна уу?")
@@ -542,13 +821,14 @@ async def camera_start():
 
 
 @app.post("/api/camera/stop")
-async def camera_stop():
+async def camera_stop(_=Depends(require_roles("admin"))):
     camera.stop()
     return {"status": "stopped"}
 
 
 @app.post("/api/test/recognize")
-async def test_recognize(file: UploadFile = File(...)):
+async def test_recognize(file: UploadFile = File(...),
+                         _=Depends(require_roles("teacher", "admin"))):
     """Upload a photo — returns which enrolled student matches (or not)."""
     content = await file.read()
     arr     = np.frombuffer(content, np.uint8)
@@ -561,7 +841,7 @@ async def test_recognize(file: UploadFile = File(...)):
     b64    = "data:image/jpeg;base64," + base64.b64encode(buf).decode()
 
     from camera import process_enrollment_image
-    emb = process_enrollment_image(b64)
+    emb = await run_in_threadpool(process_enrollment_image, b64)
     if emb is None:
         return {"matched": False, "reason": "Нүүр илрүүлэгдсэнгүй"}
 
@@ -580,21 +860,75 @@ async def test_recognize(file: UploadFile = File(...)):
     }
 
 
+_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
+_MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
+
+
+def _safe_upload_path(name: Optional[str], default: str) -> str:
+    """Sanitize a user-supplied filename and resolve it under UPLOADS_DIR.
+    Rejects anything that escapes the uploads directory or has a non-video ext."""
+    base = os.path.basename(name or default).strip() or default
+    # Drop control chars + path separators that os.path.basename doesn't strip on every OS
+    base = base.replace("\\", "_").replace("/", "_")
+    root, ext = os.path.splitext(base)
+    if ext.lower() not in _VIDEO_EXTS:
+        ext = ".mp4"
+    base = (root[:80] or "upload") + ext.lower()
+    save_path = os.path.realpath(os.path.join(UPLOADS_DIR, base))
+    if not save_path.startswith(os.path.realpath(UPLOADS_DIR) + os.sep):
+        raise HTTPException(400, "Invalid filename")
+    return save_path
+
+
 @app.post("/api/video/upload")
-async def video_upload(file: UploadFile = File(...)):
-    """Upload a video file and process it as if it were a live camera feed."""
-    save_path = os.path.join(UPLOADS_DIR, file.filename or "upload.mp4")
-    content   = await file.read()
-    with open(save_path, "wb") as f:
-        f.write(content)
-    ok = camera.start_from_file(save_path)
+async def video_upload(file: UploadFile = File(...),
+                       _=Depends(require_roles("admin"))):
+    """Upload a video file and process it as if it were a live camera feed.
+
+    Streams the upload to disk in chunks (1 MB) so memory stays flat even for
+    multi-GB files; enforces an extension allowlist and a size cap."""
+    save_path = _safe_upload_path(file.filename, "upload.mp4")
+    written = 0
+    try:
+        with open(save_path, "wb") as f:
+            while True:
+                chunk = await file.read(1024 * 1024)  # 1 MB
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > _MAX_UPLOAD_BYTES:
+                    f.close()
+                    try: os.remove(save_path)
+                    except OSError: pass
+                    raise HTTPException(413, f"File exceeds {_MAX_UPLOAD_BYTES // (1024*1024)} MB limit")
+                f.write(chunk)
+    except HTTPException:
+        raise
+    except Exception as e:
+        try: os.remove(save_path)
+        except OSError: pass
+        raise HTTPException(500, f"Upload failed: {e}")
+
+    ok = await run_in_threadpool(camera.start_from_file, save_path)
     if not ok:
+        try: os.remove(save_path)
+        except OSError: pass
         raise HTTPException(400, "Видео файл нээгдсэнгүй. Формат дэмжигдэж байна уу?")
-    return {"status": "started", "filename": file.filename}
+    return {"status": "started", "filename": os.path.basename(save_path)}
+
+
+@app.get("/api/cameras")
+async def cameras_list(_=Depends(require_roles("admin"))):
+    """List registered cameras. Today returns exactly one entry; v0.3 will
+       return one per RTSP stream registered with the CameraManager."""
+    return {
+        "default_id": camera_manager.default_id,
+        "cameras":    camera_manager.list(),
+    }
 
 
 @app.get("/api/camera/status")
-async def camera_status():
+async def camera_status(_=Depends(require_roles("admin"))):
     faces = camera.recognized_faces
     return {
         "running":    camera.is_running,
@@ -626,24 +960,26 @@ class LockBody(BaseModel):
 
 
 @app.get("/api/exam_mode")
-async def get_exam_mode():
+async def get_exam_mode(_=Depends(require_roles("teacher", "admin"))):
     return {"enabled": camera.exam_mode}
 
 
 @app.post("/api/exam_mode")
-async def set_exam_mode(body: ExamModeBody):
+async def set_exam_mode(body: ExamModeBody, _=Depends(require_roles("admin"))):
     camera.exam_mode = body.enabled
     return {"enabled": camera.exam_mode}
 
 
 @app.post("/api/lock")
-async def lock_person(body: LockBody):
+async def lock_person(body: LockBody, _=Depends(require_roles("admin"))):
+    if not (0 <= body.nx <= 1 and 0 <= body.ny <= 1):
+        raise HTTPException(400, "coordinates must be between 0 and 1")
     tid = camera.lock_at_point(body.nx, body.ny)
     return {"locked": tid is not None, "track_id": tid}
 
 
 @app.post("/api/unlock")
-async def unlock_person():
+async def unlock_person(_=Depends(require_roles("admin"))):
     camera.unlock()
     return {"locked": False}
 
@@ -658,18 +994,27 @@ class EnrollBody(BaseModel):
 
 
 @app.post("/api/enroll")
-async def enroll(body: EnrollBody):
+async def enroll(body: EnrollBody, _=Depends(require_roles("teacher", "admin"))):
+    name = _clean_text(body.name, "name", 80)
+    class_name = _clean_text(body.class_name, "class_name", 40)
+    role = (body.role or "student").strip()
+    if role != "student":
+        raise HTTPException(400, "role must be student")
+    if not body.images or len(body.images) > 6:
+        raise HTTPException(400, "images must contain 1..6 items")
+
     embeddings = []
-    student_photos_dir = os.path.join(PHOTOS_DIR, body.name)
-    os.makedirs(student_photos_dir, exist_ok=True)
+    student_photos_dir, photo_dir_name = _safe_student_photo_dir(name)
 
     for i, img in enumerate(body.images):
-        e = process_enrollment_image(img)
+        if not isinstance(img, str) or len(img) > 12 * 1024 * 1024:
+            raise HTTPException(400, "invalid enrollment image")
+        e = await run_in_threadpool(process_enrollment_image, img)
         if e is not None:
             embeddings.append(e)
             try:
                 img_data  = img.split(",")[1] if "," in img else img
-                img_bytes = base64.b64decode(img_data)
+                img_bytes = base64.b64decode(img_data, validate=True)
                 with open(os.path.join(student_photos_dir, f"{i+1}.jpg"), "wb") as f:
                     f.write(img_bytes)
             except Exception as ex:
@@ -678,44 +1023,38 @@ async def enroll(body: EnrollBody):
     if not embeddings:
         raise HTTPException(400, "Нүүр илрүүлэгдсэнгүй. Гэрэлтэй газарт зураг авна уу.")
     avg_emb    = np.mean(embeddings, axis=0).astype(np.float32)
-    student_id = db.save_student(body.name, body.class_name, body.role, avg_emb)
-    return {"success": True, "id": student_id, "name": body.name, "captures": len(embeddings),
-            "photo_url": f"/photos/{body.name}/1.jpg"}
+    student_id = db.save_student(name, class_name, role, avg_emb)
+    return {"success": True, "id": student_id, "name": name, "captures": len(embeddings),
+            "photo_url": f"/photos/{photo_dir_name}/1.jpg"}
 
 
 # ── Attendance & analytics ────────────────────────────────────────────────────
 
 @app.get("/api/attendance/today")
-async def attendance_today():
+async def attendance_today(_=Depends(require_roles("teacher", "admin"))):
     return db.get_today_attendance()
 
 
 @app.get("/api/attendance/stats")
-async def attendance_stats():
+async def attendance_stats(_=Depends(require_roles("teacher", "admin"))):
     return db.get_admin_stats()
 
 
 @app.get("/api/attention/history")
-async def attention_history():
+async def attention_history(_=Depends(require_roles("teacher", "admin"))):
     return db.get_attention_history()
 
 
 @app.get("/api/parent/student")
-async def parent_student(token_payload=Depends(_get_token_optional)):
-    student_id = None
-    if token_payload and token_payload.get("role") == "parent":
-        user = db.get_user_by_id(token_payload["id"])
-        if user:
-            student_id = user.get("student_id")
-
-    if student_id:
-        conn = db.get_db()
-        row = conn.execute(
-            "SELECT id, name, class_name FROM students WHERE id=?", (student_id,)
-        ).fetchone()
-        s = dict(row) if row else None
-    else:
-        s = db.get_first_student()
+async def parent_student(token_payload=Depends(require_roles("parent"))):
+    student_id = token_payload.get("student_id")
+    if not student_id:
+        raise HTTPException(404, "Хүүхэд холбогдоогүй байна")
+    conn = db.get_db()
+    row = conn.execute(
+        "SELECT id, name, class_name FROM students WHERE id=?", (student_id,)
+    ).fetchone()
+    s = dict(row) if row else None
 
     if not s:
         raise HTTPException(404, "Бүртгэлтэй оюутан байхгүй")
@@ -725,16 +1064,10 @@ async def parent_student(token_payload=Depends(_get_token_optional)):
 
 
 @app.get("/api/parent/history")
-async def parent_history(days: int = 14, token_payload=Depends(_get_token_optional)):
-    student_id = None
-    if token_payload and token_payload.get("role") == "parent":
-        user = db.get_user_by_id(token_payload["id"])
-        if user:
-            student_id = user.get("student_id")
-
-    if not student_id:
-        first = db.get_first_student()
-        student_id = first["id"] if first else None
+async def parent_history(days: int = 14, token_payload=Depends(require_roles("parent"))):
+    if days < 1 or days > 90:
+        raise HTTPException(400, "days must be 1..90")
+    student_id = token_payload.get("student_id")
 
     if not student_id:
         return []
@@ -760,12 +1093,12 @@ async def parent_history(days: int = 14, token_payload=Depends(_get_token_option
 # ── Student management ────────────────────────────────────────────────────────
 
 @app.get("/api/students")
-async def list_students():
+async def list_students(_=Depends(require_roles("teacher", "admin"))):
     return get_all_students()
 
 
 @app.delete("/api/students/{student_id}")
-async def remove_student(student_id: int):
+async def remove_student(student_id: int, _=Depends(require_roles("teacher", "admin"))):
     ok = delete_student(student_id)
     if not ok:
         raise HTTPException(404, "Оюутан олдсонгүй")
@@ -775,8 +1108,64 @@ async def remove_student(student_id: int):
 # ── Alerts ────────────────────────────────────────────────────────────────────
 
 @app.get("/api/alerts/recent")
-async def alerts_recent(since_id: int = 0):
+async def alerts_recent(since_id: int = 0, _=Depends(require_roles("teacher", "admin"))):
+    if since_id < 0:
+        raise HTTPException(400, "since_id must be >= 0")
     return db.get_recent_alerts(since_id=since_id)
+
+
+@app.websocket("/ws/events")
+async def ws_events(ws: WebSocket):
+    """Push channel for alerts, incidents, clip-ready, and periodic camera status.
+       Frontend uses this when available and falls back to polling on disconnect."""
+    payload = _require_ws_role(ws, "teacher", "admin")
+    if not payload:
+        await ws.close(code=1008)
+        return
+    await ws.accept()
+    q = EVENT_BUS.subscribe()
+    status_task = asyncio.create_task(_ws_status_loop(ws))
+    try:
+        while True:
+            msg = await q.get()
+            await ws.send_json(msg)
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        log.error(f"[ws] events error: {e}")
+    finally:
+        status_task.cancel()
+        EVENT_BUS.unsubscribe(q)
+
+
+async def _ws_status_loop(ws: WebSocket):
+    """Push camera_status every 2s on its own cadence (don't block the bus)."""
+    try:
+        while True:
+            faces = camera.recognized_faces
+            await ws.send_json({
+                "type": "camera_status",
+                "ts":   time.time(),
+                "payload": {
+                    "running":    camera.is_running,
+                    "exam_mode":  camera.exam_mode,
+                    "face_count": len(faces),
+                    "faces": [
+                        {
+                            "name":         f.get("name", "Unknown"),
+                            "attentive":    f.get("attentive"),
+                            "looking_down": f.get("looking_down"),
+                            "uniform_on":   f.get("uniform_on"),
+                        }
+                        for f in faces
+                    ],
+                },
+            })
+            await asyncio.sleep(2.0)
+    except (asyncio.CancelledError, WebSocketDisconnect):
+        return
+    except Exception as e:
+        log.error(f"[ws] status loop error: {e}")
 
 
 class PhoneBody(BaseModel):
@@ -784,12 +1173,12 @@ class PhoneBody(BaseModel):
 
 
 @app.post("/api/alerts/phone")
-async def phone_alert(body: PhoneBody = None):
+async def phone_alert(body: PhoneBody = None, _=Depends(require_roles("teacher", "admin"))):
     s = db.get_first_student()
     if not s:
         raise HTTPException(404, "Бүртгэлтэй оюутан байхгүй")
-    name = (body.student_name if body and body.student_name else s["name"])
-    db.save_alert(s["id"], name, "phone_detected")
+    name = _clean_text(body.student_name, "student_name", 80) if body and body.student_name else s["name"]
+    _emit_alert(s["id"], name, "phone_detected")
     return {"success": True, "student": name}
 
 
@@ -804,17 +1193,23 @@ class BullyingConfigBody(BaseModel):
 
 
 @app.get("/api/bullying/recent")
-async def bullying_recent(since_id: int = 0, limit: int = 50):
+async def bullying_recent(since_id: int = 0, limit: int = 50,
+                          _=Depends(require_roles("teacher", "admin"))):
+    if since_id < 0:
+        raise HTTPException(400, "since_id must be >= 0")
+    if limit < 1 or limit > 200:
+        raise HTTPException(400, "limit must be 1..200")
     return db.get_recent_bullying_incidents(since_id=since_id, limit=limit)
 
 
 @app.get("/api/bullying/stats")
-async def bullying_stats():
+async def bullying_stats(_=Depends(require_roles("teacher", "admin"))):
     return db.get_bullying_stats()
 
 
 @app.post("/api/bullying/{incident_id}/review")
-async def bullying_review(incident_id: int, body: BullyingReviewBody):
+async def bullying_review(incident_id: int, body: BullyingReviewBody,
+                          _=Depends(require_roles("teacher", "admin"))):
     if body.outcome not in ("confirmed", "false_positive", "inconclusive"):
         raise HTTPException(400, "Invalid outcome")
     ok = db.review_bullying_incident(incident_id, body.outcome)
@@ -824,12 +1219,13 @@ async def bullying_review(incident_id: int, body: BullyingReviewBody):
 
 
 @app.get("/api/bullying/config")
-async def bullying_config_get():
+async def bullying_config_get(_=Depends(require_roles("teacher", "admin"))):
     return {"enabled": camera._bullying.enabled}
 
 
 @app.post("/api/bullying/config")
-async def bullying_config_set(body: BullyingConfigBody):
+async def bullying_config_set(body: BullyingConfigBody,
+                              _=Depends(require_roles("teacher", "admin"))):
     camera._bullying.enabled = body.enabled
     return {"enabled": camera._bullying.enabled}
 
@@ -837,24 +1233,30 @@ async def bullying_config_set(body: BullyingConfigBody):
 # ── Uniform ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/uniform/today")
-async def uniform_today():
-    return db.get_today_uniform()
+async def uniform_today(token_payload=Depends(_get_token_required)):
+    rows = db.get_today_uniform()
+    if token_payload.get("role") == "parent":
+        student_id = token_payload.get("student_id")
+        return [r for r in rows if r["id"] == student_id] if student_id else []
+    if token_payload.get("role") in ("teacher", "admin"):
+        return rows
+    raise HTTPException(403, "forbidden")
 
 
 @app.get("/api/uniform/stats")
-async def uniform_stats():
+async def uniform_stats(_=Depends(require_roles("teacher", "admin"))):
     return db.get_uniform_stats()
 
 
 @app.get("/api/uniform/weekly")
-async def uniform_weekly():
+async def uniform_weekly(_=Depends(require_roles("teacher", "admin"))):
     return db.get_uniform_weekly()
 
 
 # ── Reset ─────────────────────────────────────────────────────────────────────
 
 @app.post("/api/reset")
-async def reset_demo():
+async def reset_demo(_=Depends(require_roles("admin"))):
     db.reset_today_data()
     return {"success": True}
 
@@ -890,31 +1292,45 @@ def _push_seat_map_to_camera(class_name: str = "Class A"):
 
 
 @app.get("/api/seats")
-async def seats_get(class_name: str = "Class A"):
+async def seats_get(class_name: str = "Class A",
+                    _=Depends(require_roles("teacher", "admin"))):
+    class_name = _clean_text(class_name, "class_name", 40)
     return db.get_seat_map(class_name)
 
 
 @app.post("/api/seats")
-async def seats_set(body: SeatMapBody):
-    db.replace_seat_map(body.class_name, [s.dict() for s in body.seats])
-    seats = _push_seat_map_to_camera(body.class_name)
+async def seats_set(body: SeatMapBody, _=Depends(require_roles("teacher", "admin"))):
+    class_name = _clean_text(body.class_name, "class_name", 40)
+    if len(body.seats) > 80:
+        raise HTTPException(400, "too many seats")
+    for s in body.seats:
+        if min(s.x1, s.y1, s.x2, s.y2) < 0:
+            raise HTTPException(400, "seat coordinates must be >= 0")
+        if s.x2 <= s.x1 or s.y2 <= s.y1:
+            raise HTTPException(400, "invalid seat rectangle")
+        if s.student_id is not None and not _student_exists(s.student_id):
+            raise HTTPException(400, "seat student_id does not exist")
+    db.replace_seat_map(class_name, [s.dict() for s in body.seats])
+    seats = _push_seat_map_to_camera(class_name)
     return {"saved": len(seats), "seats": seats}
 
 
 @app.delete("/api/seats")
-async def seats_clear(class_name: str = "Class A"):
+async def seats_clear(class_name: str = "Class A",
+                      _=Depends(require_roles("teacher", "admin"))):
+    class_name = _clean_text(class_name, "class_name", 40)
     db.clear_seat_map(class_name)
     _push_seat_map_to_camera(class_name)
     return {"cleared": True}
 
 
 @app.get("/api/seats/occupancy")
-async def seats_occupancy():
+async def seats_occupancy(_=Depends(require_roles("teacher", "admin"))):
     return camera.get_seat_occupancy_snapshot()
 
 
 @app.get("/api/snapshot")
-async def snapshot():
+async def snapshot(_=Depends(require_roles("teacher", "admin"))):
     """Return the latest annotated camera frame as JPEG — used by the seat editor."""
     frame = camera.get_frame()
     if frame is None:
@@ -939,7 +1355,7 @@ def _push_attention_disabled_to_camera():
 
 
 @app.get("/api/students/{student_id}/profile")
-async def student_profile_get(student_id: int):
+async def student_profile_get(student_id: int, _=Depends(require_roles("admin"))):
     p = db.get_student_profile(student_id)
     if not p:
         raise HTTPException(404, "Оюутан олдсонгүй")
@@ -947,7 +1363,10 @@ async def student_profile_get(student_id: int):
 
 
 @app.patch("/api/students/{student_id}/profile")
-async def student_profile_patch(student_id: int, body: StudentProfileBody):
+async def student_profile_patch(student_id: int, body: StudentProfileBody,
+                                _=Depends(require_roles("admin"))):
+    if body.profile_note is not None and len(body.profile_note) > 500:
+        raise HTTPException(400, "profile_note must be <= 500 characters")
     ok = db.update_student_profile(
         student_id,
         attention_disabled=body.attention_disabled,
@@ -987,12 +1406,12 @@ class SafetyConfigBody(BaseModel):
 
 
 @app.get("/api/admin/flags")
-async def admin_flags_get():
+async def admin_flags_get(_=Depends(require_roles("admin"))):
     return dict(FEATURE_FLAGS)
 
 
 @app.post("/api/admin/flags")
-async def admin_flags_set(body: FeatureFlagsBody):
+async def admin_flags_set(body: FeatureFlagsBody, _=Depends(require_roles("admin"))):
     for k, v in body.dict(exclude_none=True).items():
         if k in FEATURE_FLAGS:
             FEATURE_FLAGS[k] = bool(v)
@@ -1001,13 +1420,13 @@ async def admin_flags_set(body: FeatureFlagsBody):
 
 
 @app.get("/api/admin/retention")
-async def admin_retention_get():
+async def admin_retention_get(_=Depends(require_roles("admin"))):
     days = int(db.get_config("retention_days", "30"))
     return {"days": days}
 
 
 @app.post("/api/admin/retention")
-async def admin_retention_set(body: RetentionBody):
+async def admin_retention_set(body: RetentionBody, _=Depends(require_roles("admin"))):
     if body.days < 1 or body.days > 3650:
         raise HTTPException(400, "days must be 1..3650")
     db.set_config("retention_days", str(body.days))
@@ -1015,7 +1434,7 @@ async def admin_retention_set(body: RetentionBody):
 
 
 @app.post("/api/admin/purge")
-async def admin_purge_now():
+async def admin_purge_now(_=Depends(require_roles("admin"))):
     days = int(db.get_config("retention_days", "30"))
     counts = db.purge_old_data(days)
     # Also purge old clip files
@@ -1032,17 +1451,17 @@ async def admin_purge_now():
 
 
 @app.get("/api/safety/config")
-async def safety_config_get():
+async def safety_config_get(_=Depends(require_roles("admin"))):
     return _load_safety_config()
 
 
 @app.post("/api/safety/config")
-async def safety_config_set(body: SafetyConfigBody):
+async def safety_config_set(body: SafetyConfigBody, _=Depends(require_roles("admin"))):
     return _save_safety_config(body.dict())
 
 
 @app.post("/api/clips/manual")
-async def manual_clip_capture():
+async def manual_clip_capture(_=Depends(require_roles("admin"))):
     if camera.get_frame() is None:
         raise HTTPException(503, "camera is not running or no replay buffer is available")
     event = {
@@ -1062,7 +1481,7 @@ async def manual_clip_capture():
 # ── Threshold-tuning suggestion (read-only) ───────────────────────────────────
 
 @app.get("/api/bullying/threshold-suggestion")
-async def bullying_threshold_suggestion():
+async def bullying_threshold_suggestion(_=Depends(require_roles("admin"))):
     """Return per-signal precision and a suggested threshold from reviewed
        incidents. Caller can apply manually via /api/bullying/config (not
        auto-applied — needs human sanity-check)."""
@@ -1087,8 +1506,12 @@ os.makedirs(EVAL_CLIPS_DIR, exist_ok=True)
 
 ALLOWED_LABELS = {"fight", "crowd_bully", "normal", "crowd_normal", "note_passing"}
 
-# Mount eval clips so the frontend can preview them
-app.mount("/eval_clips", StaticFiles(directory=EVAL_CLIPS_DIR), name="eval_clips")
+@app.get("/eval_clips/{filename}")
+async def serve_eval_clip(filename: str,
+                          token: Optional[str] = None,
+                          authorization: Optional[str] = Header(None)):
+    _require_media_roles(token, authorization, "teacher", "admin")
+    return _safe_media_response(EVAL_CLIPS_DIR, filename, {".mp4", ".webm", ".mov"})
 
 
 def _read_labels_csv() -> dict:
@@ -1117,7 +1540,8 @@ class EvalRecordBody(BaseModel):
 
 
 @app.post("/api/eval/record/start")
-async def eval_record_start(body: EvalRecordBody):
+async def eval_record_start(body: EvalRecordBody,
+                            _=Depends(require_roles("teacher", "admin"))):
     if not camera.is_running:
         raise HTTPException(503, "Камер ажиллахгүй байна. Эхлүүлнэ үү.")
     if body.duration_s < 5 or body.duration_s > 600:
@@ -1125,9 +1549,11 @@ async def eval_record_start(body: EvalRecordBody):
     fn = body.filename or f"clip_{int(time.time())}.mp4"
     if not fn.endswith(".mp4"):
         fn += ".mp4"
-    if "/" in fn or "\\" in fn or ".." in fn:
+    if "/" in fn or "\\" in fn or ".." in fn or len(fn) > 120:
         raise HTTPException(400, "invalid filename")
-    path = os.path.join(EVAL_CLIPS_DIR, fn)
+    path = os.path.realpath(os.path.join(EVAL_CLIPS_DIR, fn))
+    if not path.startswith(os.path.realpath(EVAL_CLIPS_DIR) + os.sep):
+        raise HTTPException(400, "invalid filename")
     ok = camera.start_recording(path, max_seconds=body.duration_s, fps=12)
     if not ok:
         raise HTTPException(503, "Recording failed (no frame yet?)")
@@ -1135,18 +1561,18 @@ async def eval_record_start(body: EvalRecordBody):
 
 
 @app.post("/api/eval/record/stop")
-async def eval_record_stop():
+async def eval_record_stop(_=Depends(require_roles("teacher", "admin"))):
     p = camera.stop_recording()
     return {"stopped": True, "path": p}
 
 
 @app.get("/api/eval/record/status")
-async def eval_record_status():
+async def eval_record_status(_=Depends(require_roles("teacher", "admin"))):
     return camera.recording_status()
 
 
 @app.get("/api/eval/clips")
-async def eval_list_clips():
+async def eval_list_clips(_=Depends(require_roles("teacher", "admin"))):
     labels = _read_labels_csv()
     out = []
     for fn in sorted(os.listdir(EVAL_CLIPS_DIR)):
@@ -1168,8 +1594,9 @@ class EvalLabelBody(BaseModel):
 
 
 @app.post("/api/eval/clips/{filename}/label")
-async def eval_label_clip(filename: str, body: EvalLabelBody):
-    if "/" in filename or "\\" in filename:
+async def eval_label_clip(filename: str, body: EvalLabelBody,
+                          _=Depends(require_roles("teacher", "admin"))):
+    if "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(400, "invalid filename")
     if body.truth_label not in ALLOWED_LABELS:
         raise HTTPException(400, f"label must be one of {sorted(ALLOWED_LABELS)}")
@@ -1182,8 +1609,9 @@ async def eval_label_clip(filename: str, body: EvalLabelBody):
 
 
 @app.delete("/api/eval/clips/{filename}")
-async def eval_delete_clip(filename: str):
-    if "/" in filename or "\\" in filename:
+async def eval_delete_clip(filename: str,
+                           _=Depends(require_roles("teacher", "admin"))):
+    if "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(400, "invalid filename")
     p = os.path.join(EVAL_CLIPS_DIR, filename)
     if os.path.exists(p):
@@ -1195,7 +1623,7 @@ async def eval_delete_clip(filename: str):
 
 
 @app.post("/api/eval/run")
-async def eval_run():
+async def eval_run(_=Depends(require_roles("teacher", "admin"))):
     """Run the evaluation harness. Writes eval/last_run.json and returns it.
        NOTE: stops the live camera if it's running, since the runner spawns
        its own CameraProcessor per clip and uses the same webcam index."""
@@ -1226,7 +1654,7 @@ async def eval_run():
 
 
 @app.get("/api/eval/results")
-async def eval_results():
+async def eval_results(_=Depends(require_roles("teacher", "admin"))):
     """Latest eval results JSON, or empty stub if never run."""
     import json as _json
     if os.path.exists(EVAL_RESULTS):
