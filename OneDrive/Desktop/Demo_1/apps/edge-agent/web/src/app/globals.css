@@ -226,6 +226,15 @@ select {
   background: #f7faf9;
 }
 
+.file-button {
+  padding: 0 14px;
+  position: relative;
+}
+
+.file-button input {
+  display: none;
+}
+
 .small-btn {
   min-height: 34px;
   padding: 0 12px;
@@ -504,11 +513,32 @@ select {
   margin-top: 14px;
 }
 
+.progress-bar {
+  position: relative;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 7px;
+  margin-top: 12px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: #f8fffd;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.progress-bar span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgba(20, 184, 166, 0.55);
+}
+
 .face-list,
 .alert-list,
 .incident-list,
 .camera-list,
-.clip-list {
+.clip-list,
+.audit-list {
   display: grid;
   gap: 10px;
 }
@@ -516,7 +546,9 @@ select {
 .face-row,
 .alert-row,
 .incident-card,
-.clip-row {
+.clip-row,
+.audit-row,
+.camera-health-card {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfdfc;
@@ -675,6 +707,87 @@ th {
   border-style: solid;
 }
 
+.camera-capture {
+  display: grid;
+  gap: 12px;
+}
+
+.camera-capture video {
+  width: 100%;
+  max-height: 320px;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101816;
+  object-fit: cover;
+}
+
+.camera-health-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.camera-health-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.camera-health-card.offline {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.camera-health-card.degraded {
+  background: #fefce8;
+  border-color: #fde68a;
+}
+
+.camera-health-card small {
+  display: block;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.camera-health-card dl {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.camera-health-card dl div,
+.audit-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.camera-health-card dt,
+.audit-row span,
+.audit-row time {
+  color: var(--muted);
+}
+
+.camera-health-card dd {
+  margin: 0;
+  font-weight: 750;
+}
+
+.demo-controls {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 12px;
+}
+
+.demo-controls > label:not(.switch-row) {
+  display: grid;
+  gap: 8px;
+  color: #394641;
+  font-size: 14px;
+  font-weight: 650;
+}
+
 .eval-controls input {
   max-width: 110px;
 }
@@ -684,6 +797,11 @@ th {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding: 12px;
+}
+
+.audit-row {
+  align-items: center;
   padding: 12px;
 }
 
@@ -762,7 +880,9 @@ th {
   .two-col,
   .monitor-grid,
   .stat-grid,
-  .stat-grid.compact {
+  .stat-grid.compact,
+  .camera-health-grid,
+  .demo-controls {
     grid-template-columns: 1fr;
   }
 

@@ -49,5 +49,24 @@ From the repository root, Windows users can launch both services with:
 .\start_edge_agent_next.ps1
 ```
 
+For a public demo URL through Cloudflare Tunnel:
+
+```powershell
+.\start_edge_agent_next.ps1 -Tunnel
+```
+
+The optional tunnel requires `cloudflared` on PATH.
+
+## Docker pilot stack
+
+For a containerized pilot-style run:
+
+```bash
+docker compose -f docker-compose.edge.yml up --build
+```
+
+The compose stack keeps camera inference local to the backend container and serves
+the Next.js frontend on `http://127.0.0.1:3000`.
+
 Runtime data such as `classroom.db`, clips, uploads, photos, model weights, and
 eval videos are intentionally ignored by git.

@@ -7,19 +7,24 @@ import {
   Camera,
   CheckCircle2,
   ClipboardList,
+  Cloud,
   Gauge,
+  HardDrive,
   LayoutDashboard,
+  Lock,
   LogOut,
   Play,
   RefreshCcw,
   Shield,
   Square,
+  Upload,
+  Unlock,
   Users,
   Wifi,
   WifiOff
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   API_BASE,
   ApiError,
@@ -35,6 +40,10 @@ import type {
   AttendanceStats,
   CameraRegistry,
   CameraStatus,
+  CameraHealthResponse,
+  DemoConfig,
+  AuditEntry,
+  SystemHealth,
   Health,
   Incident,
   IncidentStats,
@@ -52,6 +61,7 @@ type Notice = { tone: "info" | "success" | "warning" | "danger"; text: string };
 const navByRole: Record<Role, Array<{ href: string; label: string; icon: React.ElementType }>> = {
   admin: [
     { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
+    { href: "/cameras", label: "Cameras", icon: Camera },
     { href: "/monitor", label: "Monitor", icon: Camera },
     { href: "/enroll", label: "Enroll", icon: ClipboardList },
     { href: "/students", label: "Students", icon: Users },
@@ -62,6 +72,7 @@ const navByRole: Record<Role, Array<{ href: string; label: string; icon: React.E
   ],
   teacher: [
     { href: "/teacher", label: "Classroom", icon: LayoutDashboard },
+    { href: "/cameras", label: "Cameras", icon: Camera },
     { href: "/enroll", label: "Enroll", icon: ClipboardList },
     { href: "/students", label: "Students", icon: Users },
     { href: "/incidents", label: "Incidents", icon: AlertTriangle },
@@ -69,6 +80,12 @@ const navByRole: Record<Role, Array<{ href: string; label: string; icon: React.E
     { href: "/eval", label: "Eval", icon: Activity }
   ],
   parent: [{ href: "/parent", label: "Parent", icon: Users }]
+};
+
+const allowedPathsByRole: Record<Role, Set<string>> = {
+  admin: new Set(["/", "/login", "/dashboard", "/cameras", "/monitor", "/enroll", "/students", "/incidents", "/seats", "/eval", "/admin"]),
+  teacher: new Set(["/", "/login", "/teacher", "/cameras", "/enroll", "/students", "/incidents", "/seats", "/eval"]),
+  parent: new Set(["/", "/login", "/parent"])
 };
 
 function messageOf(error: unknown): string {
@@ -127,6 +144,7 @@ export default function EdgeApp() {
     if (booting) return;
     if (!user && pathname !== "/" && pathname !== "/login") router.replace("/login");
     if (user && (pathname === "/" || pathname === "/login")) router.replace(roleHome(user.role));
+    if (user && !allowedPathsByRole[user.role].has(pathname)) router.replace(roleHome(user.role));
   }, [booting, pathname, router, user]);
 
   useEffect(() => {
@@ -364,6 +382,7 @@ function AppShell({
 
 function titleForPath(pathname: string, role: Role): string {
   if (pathname === "/monitor") return "Live monitor";
+  if (pathname === "/cameras") return "Camera health";
   if (pathname === "/enroll") return "Enrollment";
   if (pathname === "/students") return "Students";
   if (pathname === "/incidents") return "Incidents";
@@ -387,6 +406,7 @@ function RouteView({
   flash: (text: string, tone?: Notice["tone"]) => void;
 }) {
   if (pathname === "/monitor") return <MonitorView token={token} user={user} flash={flash} />;
+  if (pathname === "/cameras") return <CamerasView token={token} />;
   if (pathname === "/enroll") return <EnrollView token={token} flash={flash} />;
   if (pathname === "/students") return <StudentsView token={token} />;
   if (pathname === "/incidents") return <IncidentsView token={token} flash={flash} />;
@@ -574,6 +594,63 @@ function TeacherView({ token }: { token: string | null }) {
   );
 }
 
+function CamerasView({ token }: { token: string | null }) {
+  const [data, setData] = useState<CameraHealthResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setError(null);
+      setData(await api<CameraHealthResponse>("GET", "/api/cameras/health", token));
+    } catch (error) {
+      setError(messageOf(error));
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void load();
+    const id = window.setInterval(load, 5000);
+    return () => window.clearInterval(id);
+  }, [load]);
+
+  return (
+    <div className="stack">
+      {error ? <ErrorPanel message={error} onRetry={load} /> : null}
+      <div className="stat-grid compact">
+        <StatCard label="Total cameras" value={data?.summary.total ?? "-"} icon={Camera} />
+        <StatCard label="Online" value={data?.summary.online ?? "-"} icon={Wifi} tone="success" />
+        <StatCard label="Offline" value={data?.summary.offline ?? "-"} icon={WifiOff} tone={data?.summary.offline ? "warning" : "neutral"} />
+      </div>
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <p className="eyebrow">{data?.demo_mode ? "Demo camera registry" : "Live camera registry"}</p>
+            <h2>Camera health</h2>
+          </div>
+          <button className="small-btn" onClick={load}><RefreshCcw size={15} /> Refresh</button>
+        </div>
+        <div className="camera-health-grid">
+          {(data?.cameras ?? []).map((camera) => (
+            <article className={`camera-health-card ${camera.status}`} key={camera.camera_id}>
+              <div>
+                <strong>{camera.name}</strong>
+                <small>Classroom {camera.classroom_id} / {camera.source}</small>
+              </div>
+              <StatusBadge active={camera.online} on="Online" off="Offline" />
+              <dl>
+                <div><dt>FPS</dt><dd>{camera.fps_actual}</dd></div>
+                <div><dt>Faces</dt><dd>{camera.face_count}</dd></div>
+                <div><dt>Last frame</dt><dd>{camera.last_frame_age_s == null ? "-" : `${camera.last_frame_age_s}s`}</dd></div>
+                <div><dt>Last alert</dt><dd>{camera.last_alert ? `${camera.last_alert.type} (${camera.last_alert.age_s}s)` : "-"}</dd></div>
+              </dl>
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function ParentView({ token }: { token: string | null }) {
   const [data, setData] = useState<ParentStudent | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -628,6 +705,8 @@ function MonitorView({
   const [alerts, setAlerts] = useState<AlertEvent[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadPct, setUploadPct] = useState<number | null>(null);
+  const [locked, setLocked] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -666,6 +745,57 @@ function MonitorView({
     }
   }
 
+  async function lockAt(event: React.MouseEvent<HTMLImageElement>) {
+    if (user.role !== "admin") return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const nx = (event.clientX - rect.left) / rect.width;
+    const ny = (event.clientY - rect.top) / rect.height;
+    try {
+      const res = await api<{ locked: boolean }>("POST", "/api/lock", token, { nx, ny });
+      setLocked(res.locked);
+      flash(res.locked ? "Person lock enabled" : "No track at that point", res.locked ? "success" : "warning");
+    } catch (error) {
+      flash(messageOf(error), "danger");
+    }
+  }
+
+  async function unlock() {
+    try {
+      await api("POST", "/api/unlock", token);
+      setLocked(false);
+      flash("Person lock cleared", "success");
+    } catch (error) {
+      flash(messageOf(error), "danger");
+    }
+  }
+
+  function uploadVideo(file?: File) {
+    if (!file) return;
+    const form = new FormData();
+    form.append("file", file);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE}/api/video/upload`);
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) setUploadPct(Math.round((event.loaded / event.total) * 100));
+    };
+    xhr.onload = () => {
+      setUploadPct(null);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        flash("Video uploaded and started", "success");
+        void load();
+      } else {
+        flash(xhr.responseText || "Video upload failed", "danger");
+      }
+    };
+    xhr.onerror = () => {
+      setUploadPct(null);
+      flash("Video upload failed", "danger");
+    };
+    setUploadPct(0);
+    xhr.send(form);
+  }
+
   return (
     <div className="stack">
       {error ? <ErrorPanel message={error} onRetry={load} /> : null}
@@ -679,7 +809,12 @@ function MonitorView({
             <StatusBadge active={!!status?.running} on="Running" off="Stopped" />
           </div>
           {status?.running ? (
-            <img className="video-feed" src={mediaUrl("/video_feed", token)} alt="Live classroom camera feed" />
+            <img
+              className="video-feed"
+              src={mediaUrl("/video_feed", token)}
+              alt="Live classroom camera feed"
+              onClick={(event) => void lockAt(event)}
+            />
           ) : (
             <div className="video-empty">Camera feed is stopped</div>
           )}
@@ -690,7 +825,15 @@ function MonitorView({
             <button className="secondary-btn" disabled={busy || user.role !== "admin"} onClick={() => void cameraCommand("stop")}>
               <Square size={17} /> Stop
             </button>
+            <label className="secondary-btn file-button">
+              <Upload size={17} /> Video
+              <input accept="video/*" type="file" onChange={(event) => uploadVideo(event.target.files?.[0])} />
+            </label>
+            <button className="secondary-btn" disabled={!locked || user.role !== "admin"} onClick={() => void unlock()}>
+              {locked ? <Lock size={17} /> : <Unlock size={17} />} Unlock
+            </button>
           </div>
+          {uploadPct !== null ? <div className="progress-bar"><span style={{ width: `${uploadPct}%` }} />{uploadPct}%</div> : null}
         </div>
         <aside className="panel">
           <div className="panel-head">
@@ -739,6 +882,14 @@ function EnrollView({
   const [className, setClassName] = useState("Class A");
   const [images, setImages] = useState<Array<string | null>>([null, null, null]);
   const [busy, setBusy] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
 
   function setFile(slot: number, file?: File) {
     if (!file) return;
@@ -778,6 +929,39 @@ function EnrollView({
     }
   }
 
+  async function startCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      streamRef.current = stream;
+      if (videoRef.current) videoRef.current.srcObject = stream;
+    } catch (error) {
+      flash(messageOf(error), "danger");
+    }
+  }
+
+  function captureFromCamera() {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      flash("Camera frame is not ready", "warning");
+      return;
+    }
+    const slot = images.findIndex((image) => !image);
+    if (slot === -1) {
+      flash("All photo slots are filled", "warning");
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d")?.drawImage(video, 0, 0);
+    const data = canvas.toDataURL("image/jpeg", 0.9);
+    setImages((prev) => {
+      const next = [...prev];
+      next[slot] = data;
+      return next;
+    });
+  }
+
   return (
     <div className="stack">
       <section className="panel">
@@ -803,6 +987,17 @@ function EnrollView({
                 {image ? <img src={image} alt={`Enrollment preview ${idx + 1}`} /> : <span>Photo {idx + 1}</span>}
               </label>
             ))}
+          </div>
+          <div className="camera-capture">
+            <video ref={videoRef} autoPlay muted playsInline />
+            <div className="button-row">
+              <button className="secondary-btn" type="button" onClick={() => void startCamera()}>
+                <Camera size={17} /> Start webcam
+              </button>
+              <button className="secondary-btn" type="button" onClick={captureFromCamera}>
+                <Camera size={17} /> Capture
+              </button>
+            </div>
           </div>
           <button className="primary-btn" disabled={busy} type="submit">
             <ClipboardList size={17} />
@@ -953,6 +1148,9 @@ function AdminView({
   const [health, setHealth] = useState<Health | null>(null);
   const [cameras, setCameras] = useState<CameraRegistry | null>(null);
   const [flags, setFlags] = useState<Record<string, boolean>>({});
+  const [demo, setDemo] = useState<DemoConfig | null>(null);
+  const [system, setSystem] = useState<SystemHealth | null>(null);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -962,14 +1160,20 @@ function AdminView({
     }
     try {
       setError(null);
-      const [h, c, f] = await Promise.all([
+      const [h, c, f, d, s, a] = await Promise.all([
         fetch(`${API_BASE}/api/health`, { cache: "no-store" }).then((r) => r.json() as Promise<Health>),
         api<CameraRegistry>("GET", "/api/cameras", token),
-        api<Record<string, boolean>>("GET", "/api/admin/flags", token)
+        api<Record<string, boolean>>("GET", "/api/admin/flags", token),
+        api<DemoConfig>("GET", "/api/demo/config", token),
+        api<SystemHealth>("GET", "/api/system/health", token),
+        api<AuditEntry[]>("GET", "/api/audit/recent?limit=20", token)
       ]);
       setHealth(h);
       setCameras(c);
       setFlags(f);
+      setDemo(d);
+      setSystem(s);
+      setAudit(a);
     } catch (error) {
       setError(messageOf(error));
     }
@@ -988,9 +1192,25 @@ function AdminView({
     }
   }
 
+  async function saveDemo(next: DemoConfig) {
+    try {
+      const saved = await api<DemoConfig>("POST", "/api/demo/config", token, next);
+      setDemo(saved);
+      flash("Demo mode updated", "success");
+      await load();
+    } catch (error) {
+      flash(messageOf(error), "danger");
+    }
+  }
+
   return (
     <div className="stack">
       {error ? <ErrorPanel message={error} onRetry={load} /> : null}
+      <div className="stat-grid compact">
+        <StatCard label="Demo mode" value={demo?.enabled ? "On" : "Off"} icon={Cloud} tone={demo?.enabled ? "success" : "neutral"} />
+        <StatCard label="Disk used" value={system?.disk ? `${system.disk.used_pct}%` : "-"} icon={HardDrive} tone={(system?.disk?.used_pct ?? 0) > 85 ? "warning" : "neutral"} />
+        <StatCard label="Audit events" value={audit.length} icon={Shield} />
+      </div>
       <div className="two-col">
         <section className="panel">
           <div className="panel-head">
@@ -1004,6 +1224,7 @@ function AdminView({
             <div><dt>Students</dt><dd>{health?.n_students ?? "-"}</dd></div>
             <div><dt>Uptime</dt><dd>{health ? `${Math.round(health.uptime_s / 60)} min` : "-"}</dd></div>
             <div><dt>Last incident</dt><dd>{health?.last_incident ?? "-"}</dd></div>
+            <div><dt>Media files</dt><dd>{Object.values(system?.media ?? {}).reduce((sum, item) => sum + item.files, 0)}</dd></div>
           </dl>
         </section>
         <section className="panel">
@@ -1018,8 +1239,8 @@ function AdminView({
             <div className="camera-list">
               {cameras.cameras.map((camera, idx) => (
                 <div className="face-row" key={idx}>
-                  <span>{String(camera.id ?? `camera-${idx + 1}`)}</span>
-                  <small>{String(camera.label ?? camera.source ?? "local source")}</small>
+                  <span>{String(camera.camera_id ?? `camera-${idx + 1}`)}</span>
+                  <small>{String(camera.name ?? camera.source ?? "local source")}</small>
                 </div>
               ))}
             </div>
@@ -1028,6 +1249,41 @@ function AdminView({
           )}
         </section>
       </div>
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <p className="eyebrow">Demo controls</p>
+            <h2>Camera-free presentation mode</h2>
+          </div>
+          <button
+            className="small-btn"
+            onClick={() => void saveDemo({ enabled: !demo?.enabled, camera_count: demo?.camera_count ?? 20 })}
+          >
+            {demo?.enabled ? "Disable" : "Enable"}
+          </button>
+        </div>
+        <div className="demo-controls">
+          <label className="switch-row">
+            <span>Demo mode</span>
+            <input
+              checked={!!demo?.enabled}
+              type="checkbox"
+              onChange={(event) => void saveDemo({ enabled: event.target.checked, camera_count: demo?.camera_count ?? 20 })}
+            />
+          </label>
+          <label>
+            Demo camera count
+            <input
+              max={64}
+              min={1}
+              type="number"
+              value={demo?.camera_count ?? 20}
+              onChange={(event) => setDemo((prev) => ({ enabled: prev?.enabled ?? false, camera_count: Number(event.target.value) }))}
+              onBlur={() => demo && void saveDemo(demo)}
+            />
+          </label>
+        </div>
+      </section>
       <section className="panel">
         <div className="panel-head">
           <div>
@@ -1048,6 +1304,28 @@ function AdminView({
             </label>
           ))}
         </div>
+      </section>
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <p className="eyebrow">Audit</p>
+            <h2>Recent admin actions</h2>
+          </div>
+          <button className="small-btn" onClick={load}><RefreshCcw size={15} /> Refresh</button>
+        </div>
+        {audit.length ? (
+          <div className="audit-list">
+            {audit.map((entry) => (
+              <div className="audit-row" key={entry.id}>
+                <strong>{entry.action}</strong>
+                <span>{entry.actor_role ?? "system"} / {entry.entity_type ?? "-"} {entry.entity_id ?? ""}</span>
+                <time>{formatTime(entry.timestamp)}</time>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyPanel text="No audit events yet" />
+        )}
       </section>
     </div>
   );

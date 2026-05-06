@@ -97,6 +97,17 @@ def init_db():
             updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            actor_id    INTEGER,
+            actor_role  TEXT,
+            action      TEXT NOT NULL,
+            entity_type TEXT,
+            entity_id   TEXT,
+            detail      TEXT,
+            timestamp   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE TABLE IF NOT EXISTS bullying_incidents (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -219,6 +230,8 @@ def _ensure_indexes(conn: sqlite3.Connection):
             ON bullying_incidents(reviewed, timestamp);
         CREATE INDEX IF NOT EXISTS idx_classroom_seats_class
             ON classroom_seats(class_name);
+        CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp
+            ON audit_log(timestamp);
     """)
     conn.commit()
 
@@ -955,6 +968,51 @@ def set_config(key: str, value: str):
         (key, str(value)),
     )
     conn.commit()
+
+
+def get_bool_config(key: str, default: bool = False) -> bool:
+    raw = get_config(key, "1" if default else "0")
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def get_int_config(key: str, default: int, min_value: int = None, max_value: int = None) -> int:
+    raw = get_config(key, str(default))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = default
+    if min_value is not None:
+        value = max(min_value, value)
+    if max_value is not None:
+        value = min(max_value, value)
+    return value
+
+
+def log_audit(action: str, actor: dict = None, entity_type: str = None,
+              entity_id: str = None, detail: str = None):
+    conn = get_db()
+    actor_id = actor.get("id") if actor else None
+    actor_role = actor.get("role") if actor else None
+    conn.execute(
+        """INSERT INTO audit_log
+              (actor_id, actor_role, action, entity_type, entity_id, detail)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (actor_id, actor_role, action, entity_type, entity_id, detail),
+    )
+    conn.commit()
+
+
+def get_audit_log(limit: int = 80):
+    conn = get_db()
+    limit = max(1, min(int(limit), 200))
+    rows = conn.execute(
+        """SELECT id, actor_id, actor_role, action, entity_type, entity_id, detail, timestamp
+           FROM audit_log
+           ORDER BY id DESC
+           LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 # ── Data retention / purge ────────────────────────────────────────────────────

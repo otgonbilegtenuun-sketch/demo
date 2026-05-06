@@ -43,6 +43,35 @@ export type CameraRegistry = {
   cameras: Array<Record<string, unknown>>;
 };
 
+export type CameraHealth = {
+  camera_id: number;
+  classroom_id: number;
+  name: string;
+  source: string;
+  running: boolean;
+  online: boolean;
+  fps_actual: number;
+  face_count: number;
+  last_frame_age_s?: number | null;
+  last_alert?: {
+    type: string;
+    student_name?: string | null;
+    age_s?: number;
+  } | null;
+  status: "online" | "offline" | "degraded" | string;
+  updated_at: number;
+};
+
+export type CameraHealthResponse = {
+  demo_mode: boolean;
+  summary: {
+    total: number;
+    online: number;
+    offline: number;
+  };
+  cameras: CameraHealth[];
+};
+
 export type AttendanceRow = {
   id: number;
   name: string;
@@ -135,4 +164,38 @@ export type EvalRecordStatus = {
   path?: string | null;
   elapsed_s?: number;
   max_seconds?: number;
+};
+
+export type DemoConfig = {
+  enabled: boolean;
+  camera_count: number;
+};
+
+export type AuditEntry = {
+  id: number;
+  actor_id?: number | null;
+  actor_role?: string | null;
+  action: string;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  detail?: string | null;
+  timestamp: string;
+};
+
+export type SystemHealth = {
+  status: string;
+  demo_mode: boolean;
+  uptime_s: number;
+  camera_summary?: {
+    total: number;
+    online: number;
+    offline: number;
+  };
+  disk?: {
+    total_bytes: number;
+    used_bytes: number;
+    free_bytes: number;
+    used_pct: number;
+  } | null;
+  media: Record<string, { files: number; bytes: number }>;
 };

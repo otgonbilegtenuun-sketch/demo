@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import os
+import shutil
 import time
 from typing import Any, Dict, List, Optional
 
@@ -66,6 +67,34 @@ def _load_secret() -> str:
 
 
 _SECRET = _load_secret()
+_LOGIN_FAILS: Dict[str, dict] = {}
+_LOGIN_MAX_FAILS = 8
+_LOGIN_WINDOW_S = 15 * 60
+
+
+def _login_key(username: str, request: Request) -> str:
+    host = request.client.host if request.client else "unknown"
+    return f"{host}:{username.lower()}"
+
+
+def _check_login_rate(username: str, request: Request):
+    key = _login_key(username, request)
+    rec = _LOGIN_FAILS.get(key)
+    now = time.time()
+    if not rec or now - rec["first"] > _LOGIN_WINDOW_S:
+        _LOGIN_FAILS[key] = {"first": now, "count": 0}
+        return
+    if rec["count"] >= _LOGIN_MAX_FAILS:
+        raise HTTPException(429, detail="too many login attempts")
+
+
+def _note_login_result(username: str, request: Request, ok: bool):
+    key = _login_key(username, request)
+    if ok:
+        _LOGIN_FAILS.pop(key, None)
+        return
+    rec = _LOGIN_FAILS.setdefault(key, {"first": time.time(), "count": 0})
+    rec["count"] += 1
 
 
 def _create_token(user_id: int, role: str) -> str:
@@ -109,6 +138,7 @@ def _get_token_required(token_payload=Depends(_get_token_optional)):
         raise HTTPException(401, detail="Нэвтрээгүй байна")
     user = db.get_user_by_id(token_payload.get("id"))
     if not user:
+        _note_login_result(username, request, False)
         raise HTTPException(401, detail="Хэрэглэгч олдсонгүй")
     token_payload["role"] = user["role"]
     token_payload["student_id"] = user.get("student_id")
@@ -177,6 +207,23 @@ def _safe_student_photo_dir(name: str) -> tuple[str, str]:
         raise HTTPException(400, "invalid student name")
     os.makedirs(path, exist_ok=True)
     return path, safe
+
+
+def _actor(token_payload: Optional[dict]) -> Optional[dict]:
+    if not token_payload:
+        return None
+    return {
+        "id": token_payload.get("id"),
+        "role": token_payload.get("role"),
+    }
+
+
+def _audit(action: str, token_payload: Optional[dict] = None,
+           entity_type: str = None, entity_id: str = None, detail: str = None):
+    try:
+        db.log_audit(action, _actor(token_payload), entity_type, entity_id, detail)
+    except Exception as e:
+        log.warning(f"[Mergen AI] audit failed for {action}: {e}")
 
 # ── App & camera ──────────────────────────────────────────────────────────────
 
@@ -275,6 +322,143 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(ICONS_DIR,   exist_ok=True)
 os.makedirs(CLIPS_DIR,   exist_ok=True)
 set_clips_dir(CLIPS_DIR)
+
+
+def _demo_enabled() -> bool:
+    return db.get_bool_config("demo_mode_enabled", False)
+
+
+def _demo_camera_count() -> int:
+    return db.get_int_config("demo_camera_count", 20, 1, 64)
+
+
+def _demo_camera_health() -> list:
+    now = int(time.time())
+    out = []
+    for idx in range(1, _demo_camera_count() + 1):
+        online = idx % 7 != 0
+        fps = 0 if not online else 12 + (idx * 3 % 11)
+        out.append({
+            "camera_id": idx,
+            "classroom_id": 1 + ((idx - 1) // 4),
+            "name": f"Camera {idx:02d}",
+            "source": "demo",
+            "running": online,
+            "online": online,
+            "fps_actual": fps,
+            "face_count": 0 if not online else idx % 5,
+            "last_frame_age_s": None if not online else idx % 4,
+            "last_alert": None if idx % 5 else {
+                "type": "attention_down",
+                "student_name": ["Tenuun", "Otgonbileg", "Bataa"][idx % 3],
+                "age_s": 30 + idx,
+            },
+            "status": "offline" if not online else ("degraded" if fps < 15 else "online"),
+            "updated_at": now,
+        })
+    return out
+
+
+def _media_summary() -> dict:
+    roots = {
+        "photos": PHOTOS_DIR,
+        "uploads": UPLOADS_DIR,
+        "clips": CLIPS_DIR,
+    }
+    summary = {}
+    for name, root in roots.items():
+        count = 0
+        total = 0
+        for base, _, files in os.walk(root):
+            for fn in files:
+                try:
+                    path = os.path.join(base, fn)
+                    total += os.path.getsize(path)
+                    count += 1
+                except OSError:
+                    pass
+        summary[name] = {"files": count, "bytes": total}
+    try:
+        usage = shutil.disk_usage(_BASE)
+        disk = {
+            "total_bytes": usage.total,
+            "used_bytes": usage.used,
+            "free_bytes": usage.free,
+            "used_pct": round(usage.used / usage.total * 100, 1) if usage.total else 0,
+        }
+    except OSError:
+        disk = None
+    return {"disk": disk, "media": summary}
+
+
+def _demo_students() -> list:
+    names = [("Tenuun", "10A"), ("Otgonbileg", "10A"), ("Bataa", "10A"), ("Anu", "10B"), ("Nomun", "10B")]
+    rows = []
+    for idx, (name, cls) in enumerate(names, start=1):
+        present = idx != 4
+        rows.append({
+            "id": idx,
+            "name": name,
+            "class_name": cls,
+            "role": "student",
+            "has_face": True,
+            "present_today": present,
+            "present": present,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() - idx * 360)),
+            "attention_score": 92 - idx * 7,
+            "alert_count": 0 if idx in (1, 5) else idx - 1,
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() - idx * 86400)),
+        })
+    return rows
+
+
+def _demo_alerts(limit: int = 30) -> list:
+    base = [
+        ("Otgonbileg", "attention_down", 60),
+        ("Bataa", "uniform_missing", 180),
+        ("Unknown", "unknown_person", 420),
+        ("Nomun", "phone_detected", 780),
+    ]
+    return [
+        {
+            "id": idx,
+            "student_id": idx if name != "Unknown" else None,
+            "student_name": name,
+            "alert_type": kind,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() - age)),
+        }
+        for idx, (name, kind, age) in enumerate(base, start=1)
+    ][:limit]
+
+
+def _demo_incidents(limit: int = 50) -> list:
+    rows = [
+        {
+            "id": 1,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() - 900)),
+            "primary_signal": "crowding",
+            "concurrent_signals": ["rapid_motion", "close_contact"],
+            "involved_names": ["Tenuun", "Bataa"],
+            "score": 0.72,
+            "duration_s": 8.4,
+            "reviewed": 0,
+            "review_outcome": None,
+            "video_clip_path": None,
+        },
+        {
+            "id": 2,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() - 2200)),
+            "primary_signal": "fall_detected",
+            "concurrent_signals": ["pose_change"],
+            "involved_names": ["Nomun"],
+            "score": 0.81,
+            "duration_s": 4.1,
+            "reviewed": 1,
+            "review_outcome": "confirmed",
+            "video_clip_path": None,
+        },
+    ]
+    return rows[:limit]
 
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 # NOTE: /icons is also registered as an explicit route below (more reload-friendly)
@@ -698,14 +882,22 @@ class SignupBody(BaseModel):
     student_id: Optional[int] = None
 
 
+class DemoModeBody(BaseModel):
+    enabled: bool
+    camera_count: Optional[int] = None
+
+
 @app.post("/api/auth/login")
-async def auth_login(body: LoginBody):
+async def auth_login(body: LoginBody, request: Request):
     username = _clean_username(body.username)
     if not body.password or len(body.password) > 128:
         raise HTTPException(400, detail="invalid password")
+    _check_login_rate(username, request)
     user = db.authenticate_user(username, body.password)
     if not user:
         raise HTTPException(401, detail="Нэвтрэх нэр эсвэл нууц үг буруу байна")
+    _note_login_result(username, request, True)
+    _audit("auth.login", {"id": user["id"], "role": user["role"]}, "user", str(user["id"]))
     token = _create_token(user["id"], user["role"])
     return {
         "token": token,
@@ -742,6 +934,7 @@ async def auth_signup(body: SignupBody):
         full_name=full_name,
     )
     user = db.get_user_by_id(uid)
+    _audit("auth.signup", {"id": uid, "role": signup_role}, "user", str(uid))
     token = _create_token(uid, signup_role)
     return {
         "token": token,
@@ -832,16 +1025,18 @@ async def video_feed(request: Request,
 # ── Camera control ────────────────────────────────────────────────────────────
 
 @app.post("/api/camera/start")
-async def camera_start(_=Depends(require_roles("admin"))):
+async def camera_start(token_payload=Depends(require_roles("admin"))):
     ok = camera.start()
     if not ok:
         raise HTTPException(503, detail="Камер нээгдсэнгүй. Өөр програм ашиглаж байна уу?")
+    _audit("camera.start", token_payload, "camera", "1")
     return {"status": "started"}
 
 
 @app.post("/api/camera/stop")
-async def camera_stop(_=Depends(require_roles("admin"))):
+async def camera_stop(token_payload=Depends(require_roles("admin"))):
     camera.stop()
+    _audit("camera.stop", token_payload, "camera", "1")
     return {"status": "stopped"}
 
 
@@ -901,7 +1096,7 @@ def _safe_upload_path(name: Optional[str], default: str) -> str:
 
 @app.post("/api/video/upload")
 async def video_upload(file: UploadFile = File(...),
-                       _=Depends(require_roles("admin"))):
+                       token_payload=Depends(require_roles("admin"))):
     """Upload a video file and process it as if it were a live camera feed.
 
     Streams the upload to disk in chunks (1 MB) so memory stays flat even for
@@ -933,6 +1128,7 @@ async def video_upload(file: UploadFile = File(...),
         try: os.remove(save_path)
         except OSError: pass
         raise HTTPException(400, "Видео файл нээгдсэнгүй. Формат дэмжигдэж байна уу?")
+    _audit("video.upload", token_payload, "upload", os.path.basename(save_path), f"{written} bytes")
     return {"status": "started", "filename": os.path.basename(save_path)}
 
 
@@ -940,14 +1136,80 @@ async def video_upload(file: UploadFile = File(...),
 async def cameras_list(_=Depends(require_roles("admin"))):
     """List registered cameras. Today returns exactly one entry; v0.3 will
        return one per RTSP stream registered with the CameraManager."""
+    if _demo_enabled():
+        cams = _demo_camera_health()
+        return {
+            "default_id": 1,
+            "cameras": [
+                {
+                    "camera_id": c["camera_id"],
+                    "classroom_id": c["classroom_id"],
+                    "name": c["name"],
+                    "running": c["running"],
+                    "source": c["source"],
+                }
+                for c in cams
+            ],
+        }
     return {
         "default_id": camera_manager.default_id,
         "cameras":    camera_manager.list(),
     }
 
 
+@app.get("/api/cameras/health")
+async def cameras_health(_=Depends(require_roles("teacher", "admin"))):
+    if _demo_enabled():
+        return {
+            "demo_mode": True,
+            "summary": {
+                "total": _demo_camera_count(),
+                "online": sum(1 for c in _demo_camera_health() if c["online"]),
+                "offline": sum(1 for c in _demo_camera_health() if not c["online"]),
+            },
+            "cameras": _demo_camera_health(),
+        }
+    progress = camera.batch_progress
+    faces = camera.recognized_faces
+    status = {
+        "camera_id": 1,
+        "classroom_id": 1,
+        "name": "Camera 01",
+        "source": "local",
+        "running": camera.is_running,
+        "online": camera.is_running,
+        "fps_actual": progress.get("fps_actual", 0),
+        "face_count": len(faces),
+        "last_frame_age_s": None,
+        "last_alert": None,
+        "status": "online" if camera.is_running else "offline",
+        "updated_at": int(time.time()),
+    }
+    return {
+        "demo_mode": False,
+        "summary": {
+            "total": 1,
+            "online": 1 if camera.is_running else 0,
+            "offline": 0 if camera.is_running else 1,
+        },
+        "cameras": [status],
+    }
+
+
 @app.get("/api/camera/status")
 async def camera_status(_=Depends(require_roles("admin"))):
+    if _demo_enabled():
+        faces = [
+            {"name": "Tenuun", "attentive": True, "looking_down": False, "uniform_on": True},
+            {"name": "Otgonbileg", "attentive": False, "looking_down": True, "uniform_on": True},
+            {"name": "Bataa", "attentive": True, "looking_down": False, "uniform_on": False},
+        ]
+        return {
+            "running": True,
+            "exam_mode": camera.exam_mode,
+            "face_count": len(faces),
+            "faces": faces,
+        }
     faces = camera.recognized_faces
     return {
         "running":    camera.is_running,
@@ -1013,7 +1275,7 @@ class EnrollBody(BaseModel):
 
 
 @app.post("/api/enroll")
-async def enroll(body: EnrollBody, _=Depends(require_roles("teacher", "admin"))):
+async def enroll(body: EnrollBody, token_payload=Depends(require_roles("teacher", "admin"))):
     name = _clean_text(body.name, "name", 80)
     class_name = _clean_text(body.class_name, "class_name", 40)
     role = (body.role or "student").strip()
@@ -1043,6 +1305,7 @@ async def enroll(body: EnrollBody, _=Depends(require_roles("teacher", "admin")))
         raise HTTPException(400, "Нүүр илрүүлэгдсэнгүй. Гэрэлтэй газарт зураг авна уу.")
     avg_emb    = np.mean(embeddings, axis=0).astype(np.float32)
     student_id = db.save_student(name, class_name, role, avg_emb)
+    _audit("student.enroll", token_payload, "student", str(student_id), f"{name} / {class_name}")
     return {"success": True, "id": student_id, "name": name, "captures": len(embeddings),
             "photo_url": f"/photos/{photo_dir_name}/1.jpg"}
 
@@ -1051,16 +1314,37 @@ async def enroll(body: EnrollBody, _=Depends(require_roles("teacher", "admin")))
 
 @app.get("/api/attendance/today")
 async def attendance_today(_=Depends(require_roles("teacher", "admin"))):
+    if _demo_enabled():
+        return _demo_students()
     return db.get_today_attendance()
 
 
 @app.get("/api/attendance/stats")
 async def attendance_stats(_=Depends(require_roles("teacher", "admin"))):
+    if _demo_enabled():
+        rows = _demo_students()
+        present = sum(1 for r in rows if r["present"])
+        total = len(rows)
+        avg_attention = round(sum(r["attention_score"] for r in rows if r["present"]) / max(present, 1))
+        return {
+            "total_students": total,
+            "total": total,
+            "present": present,
+            "absent": total - present,
+            "attendance_rate": round(present / max(total, 1) * 100),
+            "avg_attention": avg_attention,
+            "total_alerts": sum(r["alert_count"] for r in rows),
+        }
     return db.get_admin_stats()
 
 
 @app.get("/api/attention/history")
 async def attention_history(_=Depends(require_roles("teacher", "admin"))):
+    if _demo_enabled():
+        return [
+            {"time_label": f"{h:02d}:00", "avg_attention": 70 + ((h * 7) % 24)}
+            for h in range(8, 17)
+        ]
     return db.get_attention_history()
 
 
@@ -1113,14 +1397,17 @@ async def parent_history(days: int = 14, token_payload=Depends(require_roles("pa
 
 @app.get("/api/students")
 async def list_students(_=Depends(require_roles("teacher", "admin"))):
+    if _demo_enabled():
+        return _demo_students()
     return get_all_students()
 
 
 @app.delete("/api/students/{student_id}")
-async def remove_student(student_id: int, _=Depends(require_roles("teacher", "admin"))):
+async def remove_student(student_id: int, token_payload=Depends(require_roles("teacher", "admin"))):
     ok = delete_student(student_id)
     if not ok:
         raise HTTPException(404, "Оюутан олдсонгүй")
+    _audit("student.delete", token_payload, "student", str(student_id))
     return {"success": True, "deleted_id": student_id}
 
 
@@ -1130,6 +1417,8 @@ async def remove_student(student_id: int, _=Depends(require_roles("teacher", "ad
 async def alerts_recent(since_id: int = 0, _=Depends(require_roles("teacher", "admin"))):
     if since_id < 0:
         raise HTTPException(400, "since_id must be >= 0")
+    if _demo_enabled():
+        return [a for a in _demo_alerts() if a["id"] > since_id]
     return db.get_recent_alerts(since_id=since_id)
 
 
@@ -1218,22 +1507,38 @@ async def bullying_recent(since_id: int = 0, limit: int = 50,
         raise HTTPException(400, "since_id must be >= 0")
     if limit < 1 or limit > 200:
         raise HTTPException(400, "limit must be 1..200")
+    if _demo_enabled():
+        return [i for i in _demo_incidents(limit) if i["id"] > since_id]
     return db.get_recent_bullying_incidents(since_id=since_id, limit=limit)
 
 
 @app.get("/api/bullying/stats")
 async def bullying_stats(_=Depends(require_roles("teacher", "admin"))):
+    if _demo_enabled():
+        rows = _demo_incidents()
+        pending = sum(1 for r in rows if not r["reviewed"])
+        return {
+            "today": len(rows),
+            "week_total": len(rows),
+            "pending": pending,
+            "reviewed_week": len(rows) - pending,
+            "by_signal_week": [
+                {"primary_signal": "crowding", "count": 1},
+                {"primary_signal": "fall_detected", "count": 1},
+            ],
+        }
     return db.get_bullying_stats()
 
 
 @app.post("/api/bullying/{incident_id}/review")
 async def bullying_review(incident_id: int, body: BullyingReviewBody,
-                          _=Depends(require_roles("teacher", "admin"))):
+                          token_payload=Depends(require_roles("teacher", "admin"))):
     if body.outcome not in ("confirmed", "false_positive", "inconclusive"):
         raise HTTPException(400, "Invalid outcome")
     ok = db.review_bullying_incident(incident_id, body.outcome)
     if not ok:
         raise HTTPException(404, "Incident not found")
+    _audit("incident.review", token_payload, "incident", str(incident_id), body.outcome)
     return {"success": True}
 
 
@@ -1275,8 +1580,9 @@ async def uniform_weekly(_=Depends(require_roles("teacher", "admin"))):
 # ── Reset ─────────────────────────────────────────────────────────────────────
 
 @app.post("/api/reset")
-async def reset_demo(_=Depends(require_roles("admin"))):
+async def reset_demo(token_payload=Depends(require_roles("admin"))):
     db.reset_today_data()
+    _audit("demo.reset_today", token_payload, "demo", "today")
     return {"success": True}
 
 
@@ -1318,7 +1624,7 @@ async def seats_get(class_name: str = "Class A",
 
 
 @app.post("/api/seats")
-async def seats_set(body: SeatMapBody, _=Depends(require_roles("teacher", "admin"))):
+async def seats_set(body: SeatMapBody, token_payload=Depends(require_roles("teacher", "admin"))):
     class_name = _clean_text(body.class_name, "class_name", 40)
     if len(body.seats) > 80:
         raise HTTPException(400, "too many seats")
@@ -1331,15 +1637,17 @@ async def seats_set(body: SeatMapBody, _=Depends(require_roles("teacher", "admin
             raise HTTPException(400, "seat student_id does not exist")
     db.replace_seat_map(class_name, [s.dict() for s in body.seats])
     seats = _push_seat_map_to_camera(class_name)
+    _audit("seats.save", token_payload, "classroom", class_name, f"{len(seats)} seats")
     return {"saved": len(seats), "seats": seats}
 
 
 @app.delete("/api/seats")
 async def seats_clear(class_name: str = "Class A",
-                      _=Depends(require_roles("teacher", "admin"))):
+                      token_payload=Depends(require_roles("teacher", "admin"))):
     class_name = _clean_text(class_name, "class_name", 40)
     db.clear_seat_map(class_name)
     _push_seat_map_to_camera(class_name)
+    _audit("seats.clear", token_payload, "classroom", class_name)
     return {"cleared": True}
 
 
@@ -1430,11 +1738,12 @@ async def admin_flags_get(_=Depends(require_roles("admin"))):
 
 
 @app.post("/api/admin/flags")
-async def admin_flags_set(body: FeatureFlagsBody, _=Depends(require_roles("admin"))):
+async def admin_flags_set(body: FeatureFlagsBody, token_payload=Depends(require_roles("admin"))):
     for k, v in body.dict(exclude_none=True).items():
         if k in FEATURE_FLAGS:
             FEATURE_FLAGS[k] = bool(v)
             db.set_config(f"flag.{k}", "1" if v else "0")
+    _audit("admin.flags", token_payload, "config", "feature_flags")
     return dict(FEATURE_FLAGS)
 
 
@@ -1445,15 +1754,16 @@ async def admin_retention_get(_=Depends(require_roles("admin"))):
 
 
 @app.post("/api/admin/retention")
-async def admin_retention_set(body: RetentionBody, _=Depends(require_roles("admin"))):
+async def admin_retention_set(body: RetentionBody, token_payload=Depends(require_roles("admin"))):
     if body.days < 1 or body.days > 3650:
         raise HTTPException(400, "days must be 1..3650")
     db.set_config("retention_days", str(body.days))
+    _audit("admin.retention", token_payload, "config", "retention_days", str(body.days))
     return {"days": body.days}
 
 
 @app.post("/api/admin/purge")
-async def admin_purge_now(_=Depends(require_roles("admin"))):
+async def admin_purge_now(token_payload=Depends(require_roles("admin"))):
     days = int(db.get_config("retention_days", "30"))
     counts = db.purge_old_data(days)
     # Also purge old clip files
@@ -1466,6 +1776,7 @@ async def admin_purge_now(_=Depends(require_roles("admin"))):
                 os.remove(p); purged_clips += 1
     except Exception as e:
         log.error(f"[purge] clip cleanup error: {e}")
+    _audit("admin.purge", token_payload, "retention", str(days), json.dumps(counts))
     return {"days": days, "rows_deleted": counts, "clips_deleted": purged_clips}
 
 
@@ -1475,12 +1786,14 @@ async def safety_config_get(_=Depends(require_roles("admin"))):
 
 
 @app.post("/api/safety/config")
-async def safety_config_set(body: SafetyConfigBody, _=Depends(require_roles("admin"))):
-    return _save_safety_config(body.dict())
+async def safety_config_set(body: SafetyConfigBody, token_payload=Depends(require_roles("admin"))):
+    saved = _save_safety_config(body.dict())
+    _audit("safety.config", token_payload, "config", "safety")
+    return saved
 
 
 @app.post("/api/clips/manual")
-async def manual_clip_capture(_=Depends(require_roles("admin"))):
+async def manual_clip_capture(token_payload=Depends(require_roles("admin"))):
     if camera.get_frame() is None:
         raise HTTPException(503, "camera is not running or no replay buffer is available")
     event = {
@@ -1494,6 +1807,7 @@ async def manual_clip_capture(_=Depends(require_roles("admin"))):
         "clip_post_s": 0.0,
     }
     iid = _save_review_incident(event, "MANUAL")
+    _audit("clip.manual", token_payload, "incident", str(iid))
     return {"success": True, "incident_id": iid}
 
 
@@ -1684,6 +1998,48 @@ async def eval_results(_=Depends(require_roles("teacher", "admin"))):
 
 # ── Eval page route ──────────────────────────────────────────────────────────
 
+# ── Demo, audit, and system health APIs ───────────────────────────────────────
+
+@app.get("/api/demo/config")
+async def demo_config_get(_=Depends(require_roles("admin"))):
+    return {
+        "enabled": _demo_enabled(),
+        "camera_count": _demo_camera_count(),
+    }
+
+
+@app.post("/api/demo/config")
+async def demo_config_set(body: DemoModeBody,
+                          token_payload=Depends(require_roles("admin"))):
+    count = body.camera_count if body.camera_count is not None else _demo_camera_count()
+    count = max(1, min(int(count), 64))
+    db.set_config("demo_mode_enabled", "1" if body.enabled else "0")
+    db.set_config("demo_camera_count", str(count))
+    _audit("demo.config", token_payload, "demo", "mode", json.dumps({
+        "enabled": body.enabled,
+        "camera_count": count,
+    }))
+    return {"enabled": body.enabled, "camera_count": count}
+
+
+@app.get("/api/audit/recent")
+async def audit_recent(limit: int = 80, _=Depends(require_roles("admin"))):
+    return db.get_audit_log(limit)
+
+
+@app.get("/api/system/health")
+async def system_health(_=Depends(require_roles("admin"))):
+    media = _media_summary()
+    cams = await cameras_health(_)
+    return {
+        "status": "ok",
+        "demo_mode": _demo_enabled(),
+        "uptime_s": round(time.time() - _STARTED_AT) if "_STARTED_AT" in globals() else 0,
+        "camera_summary": cams.get("summary"),
+        **media,
+    }
+
+
 @app.get("/eval")
 async def page_eval():             return serve_html()
 
@@ -1716,6 +2072,7 @@ async def health():
     return {
         "status":         "ok",
         "uptime_s":       round(time.time() - _STARTED_AT),
+        "demo_mode":      _demo_enabled(),
         "camera_running": camera.is_running,
         "exam_mode":      camera.exam_mode,
         "recording":      camera.is_recording(),
