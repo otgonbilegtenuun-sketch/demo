@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 import cv2
 import numpy as np
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Header, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -182,6 +183,24 @@ def _safe_student_photo_dir(name: str) -> tuple[str, str]:
 _BASE = os.path.dirname(os.path.abspath(__file__))
 
 app    = FastAPI(title="Mergen AI")
+
+_CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+]
+_extra_cors = os.environ.get("MERGEN_CORS_ORIGINS", "")
+if _extra_cors:
+    _CORS_ORIGINS.extend([o.strip() for o in _extra_cors.split(",") if o.strip()])
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 camera = CameraProcessor()
 camera_manager = CameraManager()
 camera_manager.register(camera, camera_id=1, classroom_id=1, name="Camera 1")
