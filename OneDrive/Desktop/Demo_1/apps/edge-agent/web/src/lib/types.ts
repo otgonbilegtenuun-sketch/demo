@@ -111,3 +111,28 @@ export type ParentStudent = {
     alert_count?: number;
   };
 };
+
+export type Seat = {
+  id?: number;
+  student_id?: number | null;
+  student_name?: string | null;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+};
+
+export type EvalClip = {
+  filename: string;
+  size_bytes: number;
+  modified: number;
+  url: string;
+  truth_label?: string | null;
+};
+
+export type EvalRecordStatus = {
+  recording?: boolean;
+  path?: string | null;
+  elapsed_s?: number;
+  max_seconds?: number;
+};

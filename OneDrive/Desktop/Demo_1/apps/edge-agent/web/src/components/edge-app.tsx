@@ -6,6 +6,7 @@ import {
   Bell,
   Camera,
   CheckCircle2,
+  ClipboardList,
   Gauge,
   LayoutDashboard,
   LogOut,
@@ -39,6 +40,9 @@ import type {
   IncidentStats,
   ParentStudent,
   Role,
+  Seat,
+  EvalClip,
+  EvalRecordStatus,
   Student,
   User
 } from "@/lib/types";
@@ -49,14 +53,20 @@ const navByRole: Record<Role, Array<{ href: string; label: string; icon: React.E
   admin: [
     { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
     { href: "/monitor", label: "Monitor", icon: Camera },
+    { href: "/enroll", label: "Enroll", icon: ClipboardList },
     { href: "/students", label: "Students", icon: Users },
     { href: "/incidents", label: "Incidents", icon: AlertTriangle },
+    { href: "/seats", label: "Seats", icon: LayoutDashboard },
+    { href: "/eval", label: "Eval", icon: Activity },
     { href: "/admin", label: "Admin", icon: Shield }
   ],
   teacher: [
     { href: "/teacher", label: "Classroom", icon: LayoutDashboard },
+    { href: "/enroll", label: "Enroll", icon: ClipboardList },
     { href: "/students", label: "Students", icon: Users },
-    { href: "/incidents", label: "Incidents", icon: AlertTriangle }
+    { href: "/incidents", label: "Incidents", icon: AlertTriangle },
+    { href: "/seats", label: "Seats", icon: LayoutDashboard },
+    { href: "/eval", label: "Eval", icon: Activity }
   ],
   parent: [{ href: "/parent", label: "Parent", icon: Users }]
 };
@@ -354,8 +364,11 @@ function AppShell({
 
 function titleForPath(pathname: string, role: Role): string {
   if (pathname === "/monitor") return "Live monitor";
+  if (pathname === "/enroll") return "Enrollment";
   if (pathname === "/students") return "Students";
   if (pathname === "/incidents") return "Incidents";
+  if (pathname === "/seats") return "Seat map";
+  if (pathname === "/eval") return "Evaluation";
   if (pathname === "/admin") return "Admin settings";
   if (pathname === "/teacher") return "Classroom";
   if (pathname === "/parent") return "Parent summary";
@@ -374,8 +387,11 @@ function RouteView({
   flash: (text: string, tone?: Notice["tone"]) => void;
 }) {
   if (pathname === "/monitor") return <MonitorView token={token} user={user} flash={flash} />;
+  if (pathname === "/enroll") return <EnrollView token={token} flash={flash} />;
   if (pathname === "/students") return <StudentsView token={token} />;
   if (pathname === "/incidents") return <IncidentsView token={token} flash={flash} />;
+  if (pathname === "/seats") return <SeatsView token={token} flash={flash} />;
+  if (pathname === "/eval") return <EvalView token={token} flash={flash} />;
   if (pathname === "/admin") return <AdminView token={token} user={user} flash={flash} />;
   if (pathname === "/parent") return <ParentView token={token} />;
   if (pathname === "/teacher") return <TeacherView token={token} />;
@@ -712,6 +728,92 @@ function MonitorView({
   );
 }
 
+function EnrollView({
+  token,
+  flash
+}: {
+  token: string | null;
+  flash: (text: string, tone?: Notice["tone"]) => void;
+}) {
+  const [name, setName] = useState("");
+  const [className, setClassName] = useState("Class A");
+  const [images, setImages] = useState<Array<string | null>>([null, null, null]);
+  const [busy, setBusy] = useState(false);
+
+  function setFile(slot: number, file?: File) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImages((prev) => {
+        const next = [...prev];
+        next[slot] = String(reader.result ?? "");
+        return next;
+      });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const payloadImages = images.filter(Boolean) as string[];
+    if (!name.trim() || !className.trim() || !payloadImages.length) {
+      flash("Name, class, and at least one image are required", "warning");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api("POST", "/api/enroll", token, {
+        name: name.trim(),
+        class_name: className.trim(),
+        role: "student",
+        images: payloadImages
+      });
+      setName("");
+      setImages([null, null, null]);
+      flash("Student enrolled", "success");
+    } catch (error) {
+      flash(messageOf(error), "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack">
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <p className="eyebrow">Face enrollment</p>
+            <h2>Register a student</h2>
+          </div>
+        </div>
+        <form className="enroll-form" onSubmit={submit}>
+          <label>
+            Student name
+            <input value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <label>
+            Class
+            <input value={className} onChange={(e) => setClassName(e.target.value)} />
+          </label>
+          <div className="upload-grid">
+            {images.map((image, idx) => (
+              <label className={image ? "upload-slot filled" : "upload-slot"} key={idx}>
+                <input accept="image/*" type="file" onChange={(e) => setFile(idx, e.target.files?.[0])} />
+                {image ? <img src={image} alt={`Enrollment preview ${idx + 1}`} /> : <span>Photo {idx + 1}</span>}
+              </label>
+            ))}
+          </div>
+          <button className="primary-btn" disabled={busy} type="submit">
+            <ClipboardList size={17} />
+            {busy ? "Saving" : "Enroll student"}
+          </button>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 function StudentsView({ token }: { token: string | null }) {
   const [rows, setRows] = useState<Student[]>([]);
   const [query, setQuery] = useState("");
@@ -946,6 +1048,227 @@ function AdminView({
             </label>
           ))}
         </div>
+      </section>
+    </div>
+  );
+}
+
+function SeatsView({
+  token,
+  flash
+}: {
+  token: string | null;
+  flash: (text: string, tone?: Notice["tone"]) => void;
+}) {
+  const [seats, setSeats] = useState<Seat[]>([]);
+  const [occupancy, setOccupancy] = useState<Record<string, unknown> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setError(null);
+      const [seatRows, occ] = await Promise.all([
+        api<Seat[]>("GET", "/api/seats?class_name=Class%20A", token),
+        api<Record<string, unknown>>("GET", "/api/seats/occupancy", token).catch(() => null)
+      ]);
+      setSeats(seatRows);
+      setOccupancy(occ);
+    } catch (error) {
+      setError(messageOf(error));
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function clearSeats() {
+    try {
+      await api("DELETE", "/api/seats?class_name=Class%20A", token);
+      flash("Seat map cleared", "success");
+      await load();
+    } catch (error) {
+      flash(messageOf(error), "danger");
+    }
+  }
+
+  return (
+    <div className="stack">
+      {error ? <ErrorPanel message={error} onRetry={load} /> : null}
+      <div className="stat-grid compact">
+        <StatCard label="Seats" value={seats.length} icon={LayoutDashboard} />
+        <StatCard label="Occupancy signal" value={occupancy ? "Live" : "Idle"} icon={Activity} tone={occupancy ? "success" : "neutral"} />
+        <StatCard label="Class" value="Class A" icon={Users} />
+      </div>
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <p className="eyebrow">Seat map</p>
+            <h2>Assigned seats</h2>
+          </div>
+          <div className="button-row">
+            <button className="small-btn" onClick={load}><RefreshCcw size={15} /> Refresh</button>
+            <button className="small-btn danger" onClick={() => void clearSeats()}>Clear</button>
+          </div>
+        </div>
+        {seats.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Rectangle</th>
+                  <th>Student ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                {seats.map((seat, idx) => (
+                  <tr key={seat.id ?? idx}>
+                    <td>{seat.student_name ?? "Unassigned"}</td>
+                    <td>{seat.x1},{seat.y1} - {seat.x2},{seat.y2}</td>
+                    <td>{seat.student_id ?? "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyPanel text="No seats assigned yet. Use the legacy canvas editor if you need to draw rectangles today." />
+        )}
+      </section>
+    </div>
+  );
+}
+
+const evalLabels = ["fight", "crowd_bully", "normal", "crowd_normal", "note_passing"];
+
+function EvalView({
+  token,
+  flash
+}: {
+  token: string | null;
+  flash: (text: string, tone?: Notice["tone"]) => void;
+}) {
+  const [clips, setClips] = useState<EvalClip[]>([]);
+  const [status, setStatus] = useState<EvalRecordStatus | null>(null);
+  const [results, setResults] = useState<Record<string, unknown> | null>(null);
+  const [duration, setDuration] = useState(30);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setError(null);
+      const [clipRows, recStatus, evalResults] = await Promise.all([
+        api<EvalClip[]>("GET", "/api/eval/clips", token),
+        api<EvalRecordStatus>("GET", "/api/eval/record/status", token),
+        api<Record<string, unknown>>("GET", "/api/eval/results", token).catch(() => null)
+      ]);
+      setClips(clipRows);
+      setStatus(recStatus);
+      setResults(evalResults);
+    } catch (error) {
+      setError(messageOf(error));
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function startRecording() {
+    setBusy(true);
+    try {
+      await api("POST", "/api/eval/record/start", token, { duration_s: duration });
+      flash("Eval recording started", "success");
+      await load();
+    } catch (error) {
+      flash(messageOf(error), "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function stopRecording() {
+    setBusy(true);
+    try {
+      await api("POST", "/api/eval/record/stop", token);
+      flash("Eval recording stopped", "success");
+      await load();
+    } catch (error) {
+      flash(messageOf(error), "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function labelClip(filename: string, truth_label: string) {
+    try {
+      await api("POST", `/api/eval/clips/${encodeURIComponent(filename)}/label`, token, { truth_label });
+      await load();
+    } catch (error) {
+      flash(messageOf(error), "danger");
+    }
+  }
+
+  async function runEval() {
+    setBusy(true);
+    try {
+      setResults(await api<Record<string, unknown>>("POST", "/api/eval/run", token));
+      flash("Evaluation completed", "success");
+    } catch (error) {
+      flash(messageOf(error), "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack">
+      {error ? <ErrorPanel message={error} onRetry={load} /> : null}
+      <div className="stat-grid compact">
+        <StatCard label="Clips" value={clips.length} icon={Camera} />
+        <StatCard label="Recorder" value={status?.recording ? "Recording" : "Idle"} icon={Activity} tone={status?.recording ? "warning" : "neutral"} />
+        <StatCard label="Last result" value={results?.never_run ? "None" : "Ready"} icon={CheckCircle2} tone={results?.never_run ? "neutral" : "success"} />
+      </div>
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <p className="eyebrow">Ground truth</p>
+            <h2>Record and label clips</h2>
+          </div>
+          <button className="small-btn" onClick={load}><RefreshCcw size={15} /> Refresh</button>
+        </div>
+        <div className="button-row eval-controls">
+          <input min={5} max={600} type="number" value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
+          <button className="primary-btn" disabled={busy || status?.recording} onClick={() => void startRecording()}>
+            <Play size={17} /> Record
+          </button>
+          <button className="secondary-btn" disabled={busy || !status?.recording} onClick={() => void stopRecording()}>
+            <Square size={17} /> Stop
+          </button>
+          <button className="secondary-btn" disabled={busy || !clips.length} onClick={() => void runEval()}>
+            <Activity size={17} /> Run eval
+          </button>
+        </div>
+        {clips.length ? (
+          <div className="clip-list">
+            {clips.map((clip) => (
+              <div className="clip-row" key={clip.filename}>
+                <div>
+                  <strong>{clip.filename}</strong>
+                  <small>{Math.round(clip.size_bytes / 1024)} KB</small>
+                </div>
+                <select value={clip.truth_label ?? ""} onChange={(e) => void labelClip(clip.filename, e.target.value)}>
+                  <option value="">Unlabeled</option>
+                  {evalLabels.map((label) => <option key={label} value={label}>{label}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyPanel text="No evaluation clips yet" />
+        )}
       </section>
     </div>
   );

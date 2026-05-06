@@ -170,6 +170,15 @@ input:focus {
   border-color: var(--green);
 }
 
+select {
+  min-height: 38px;
+  border: 1px solid #cfd9d6;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--text);
+  padding: 8px 10px;
+}
+
 .role-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -221,6 +230,11 @@ input:focus {
   min-height: 34px;
   padding: 0 12px;
   font-size: 13px;
+}
+
+.small-btn.danger {
+  border-color: #fed7aa;
+  color: #9a3412;
 }
 
 .icon-btn {
@@ -493,14 +507,16 @@ input:focus {
 .face-list,
 .alert-list,
 .incident-list,
-.camera-list {
+.camera-list,
+.clip-list {
   display: grid;
   gap: 10px;
 }
 
 .face-row,
 .alert-row,
-.incident-card {
+.incident-card,
+.clip-row {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfdfc;
@@ -615,6 +631,71 @@ th {
   font-weight: 800;
 }
 
+.enroll-form {
+  display: grid;
+  gap: 16px;
+}
+
+.enroll-form label {
+  display: grid;
+  gap: 8px;
+  color: #394641;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.upload-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.upload-slot {
+  min-height: 180px;
+  border: 1px dashed #b8c7c3;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #f8faf9;
+  color: var(--muted);
+}
+
+.upload-slot input {
+  display: none;
+}
+
+.upload-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.upload-slot.filled {
+  border-style: solid;
+}
+
+.eval-controls input {
+  max-width: 110px;
+}
+
+.clip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+}
+
+.clip-row div {
+  display: grid;
+  gap: 3px;
+}
+
+.clip-row small {
+  color: var(--muted);
+}
+
 .parent-panel {
   display: flex;
   align-items: center;
@@ -721,6 +802,7 @@ th {
 
   .role-grid,
   .flag-grid,
+  .upload-grid,
   .sidebar nav {
     grid-template-columns: 1fr;
   }
