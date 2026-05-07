@@ -32,11 +32,5 @@ __pycache__/
 *.pyc
 .venv/
 
-# Node / Next.js
-node_modules/
-.next/
-out/
-*.tsbuildinfo
-
 # Claude Code
 .claude/
