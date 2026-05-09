@@ -27,6 +27,9 @@ apps/edge-agent/eval/clips/
 apps/edge-agent/eval/_tmp_clips/
 apps/edge-agent/eval/last_run.json
 
+# Test clips
+test_clip.mp4
+
 # Python
 __pycache__/
 *.pyc

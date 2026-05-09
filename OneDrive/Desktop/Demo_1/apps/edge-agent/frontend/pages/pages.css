@@ -164,6 +164,20 @@
 .upload-progress-label  { font-size: .75rem; color: var(--muted); display: flex; justify-content: space-between; }
 .upload-progress-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 
+.batch-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); cursor: pointer; user-select: none; }
+.batch-toggle input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+
+.batch-progress-wrap {
+  margin-top: 10px;
+  background: linear-gradient(135deg, var(--surface2), #EEF2FF);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+}
+.batch-progress-header { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: .9rem; margin-bottom: 10px; color: var(--accent); }
+.batch-progress-stats { display: flex; gap: 16px; flex-wrap: wrap; font-size: .78rem; color: var(--muted); margin-top: 6px; margin-bottom: 10px; }
+.batch-progress-stats span { white-space: nowrap; }
+
 #videoStream { width: 100%; border-radius: var(--radius); border: 1px solid var(--border); display: block; background: #000; }
 
 /* ── Face panel ────────────────────────────────────────────────────────────── */

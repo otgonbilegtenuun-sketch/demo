@@ -630,3 +630,15 @@ body.chrome-app {
   background: var(--bg);
   background-image: none;
 }
+
+/* ───────────────────────────────────────────────────────────────
+   Chart container heights — Chart.js uses maintainAspectRatio:false
+   to be responsive, but without an explicit container height it
+   fills all available space and looks gigantic.
+   ─────────────────────────────────────────────────────────────── */
+.card canvas {
+  max-height: 240px !important;   /* hard cap so charts never dominate */
+}
+#adAttentionChart, #adClassChart { max-height: 220px !important; }
+#adIncidentsChart                 { max-height: 140px !important; }
+#attChart                         { max-height: 220px !important; }

@@ -1045,6 +1045,10 @@
       </button>
     </div>
     <div class="mon-toolbar-group">
+      <label class="batch-toggle" title="Batch mode: process video offline (faster, no live preview)">
+        <input type="checkbox" id="chkBatchMode">
+        <span data-i18n="batch_mode">Batch горим</span>
+      </label>
       <button class="btn btn-ghost btn-sm" id="btnVideoFile" onclick="document.getElementById('videoFileInput').click()">
         <svg class="icon"><use href="#i-video"/></svg><span data-i18n="btn_video_file">Видео файл</span>
       </button>
@@ -1070,6 +1074,23 @@
       <button class="btn btn-secondary btn-sm" id="btnVideoRetry" onclick="retryVideoUpload()" style="display:none">Retry</button>
       <button class="btn btn-ghost btn-sm" id="btnVideoCancel" onclick="cancelVideoUpload()">Cancel</button>
     </div>
+  </div>
+
+  <div class="batch-progress-wrap" id="batchProgressPanel" style="display:none">
+    <div class="batch-progress-header">
+      <svg class="icon"><use href="#i-video"/></svg>
+      <span data-i18n="batch_processing">Batch боловсруулж байна...</span>
+    </div>
+    <div class="upload-progress-bar-bg">
+      <div class="upload-progress-bar" id="batchProgressBar" style="width:0%"></div>
+    </div>
+    <div class="batch-progress-stats">
+      <span id="batchProgressPct">0%</span>
+      <span id="batchProgressFrames">0 / 0 frames</span>
+      <span id="batchProgressFps">0 fps</span>
+      <span id="batchProgressEta">ETA: —</span>
+    </div>
+    <button class="btn btn-secondary btn-sm" onclick="stopMonCam()" data-i18n="batch_stop">Зогсоох</button>
   </div>
 
   <div class="monitor-grid">

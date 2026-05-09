@@ -206,6 +206,11 @@ const I18N = {
     enroll_form_sub:'Мэдээллийг бөглөж бүртгэнэ үү',
     btn_video_file:'Видео файл',
     btn_unlock:'Суллах',
+    batch_mode:'Batch горим',
+    batch_processing:'Batch боловсруулж байна...',
+    batch_stop:'Зогсоох',
+    batch_done:'Batch боловсруулалт дууслаа!',
+    batch_done_sub:'Үр дүнг хянахын тулд хянах хэсэг рүү очно уу.',
   },
   en: {
     nav_home:'Home', nav_enroll:'Enroll', nav_monitor:'Monitor',
@@ -408,6 +413,11 @@ const I18N = {
     enroll_form_sub:'Fill in the details to register',
     btn_video_file:'Video file',
     btn_unlock:'Unlock',
+    batch_mode:'Batch mode',
+    batch_processing:'Batch processing...',
+    batch_stop:'Stop',
+    batch_done:'Batch processing complete!',
+    batch_done_sub:'Go to teacher dashboard to review results.',
   }
 };
 
@@ -1403,10 +1413,15 @@ function uploadVideoFile(fileOverride) {
       finishVideoUpload();
       document.getElementById('btnStartMon').style.display  = 'none';
       document.getElementById('btnVideoFile').style.display = 'none';
-      document.getElementById('btnStopMon').style.display   = 'inline-flex';
+      document.getElementById('btnStopMon').style.display   = data.batch ? 'none' : 'inline-flex';
       updateCamPill(true);
-      _setVideoSrc(true);
-      toast(data.filename + ' боловсруулж байна', 'success');
+      if (data.batch) {
+        _setVideoSrc(false);
+        showBatchProgress(true);
+      } else {
+        _setVideoSrc(true);
+      }
+      toast(data.filename + (data.batch ? ' batch боловсруулж байна' : ' боловсруулж байна'), 'success');
     } else {
       try {
         const err = JSON.parse(xhr.responseText);
@@ -1430,7 +1445,9 @@ function uploadVideoFile(fileOverride) {
     }
   };
 
-  xhr.open('POST', '/api/video/upload');
+  const batchChk = document.getElementById('chkBatchMode');
+  const isBatch = batchChk && batchChk.checked;
+  xhr.open('POST', '/api/video/upload' + (isBatch ? '?batch=true' : ''));
   const headers = authHeader();
   if (headers.Authorization) xhr.setRequestHeader('Authorization', headers.Authorization);
   xhr.send(fd);
@@ -1482,21 +1499,36 @@ async function initMonitor() {
   const existing = await api('GET','/api/alerts/recent?since_id=0').catch(()=>[]);
   loadExistingAlerts(existing);
 
+  if (st.batch && st.batch.batch_mode) {
+    showBatchProgress(true);
+    updateBatchProgress(st.batch);
+  }
+
   S.monTimer = setInterval(async()=>{
     const s=await api('GET','/api/camera/status').catch(()=>null);
     if (!s) return;
     renderFacePanel(s.faces);
     await pollAlerts();
-    if (!s.running && document.getElementById('btnStopMon').style.display !== 'none') {
+    if (s.batch) updateBatchProgress(s.batch);
+    if (!s.running && S.lastCamRunning) {
       document.getElementById('btnStartMon').style.display='inline-flex';
       document.getElementById('btnVideoFile').style.display='inline-flex';
       document.getElementById('btnVideoFile').disabled=false;
       document.getElementById('btnStopMon').style.display='none';
       document.getElementById('btnUnlock').style.display='none';
+      showBatchProgress(false);
       updateCamPill(false);
       _setVideoSrc(false);
-      toast('Видео дууслаа','info');
+      if (S._wasBatch) {
+        S._wasBatch = false;
+        toast(t('batch_done'),'success');
+        setTimeout(()=> go(null, '/dashboard/teacher'), 1500);
+      } else {
+        toast('Видео дууслаа','info');
+      }
     }
+    S.lastCamRunning = s.running;
+    if (s.batch && s.batch.batch_mode) S._wasBatch = true;
   },2500);
 }
 
@@ -1517,6 +1549,8 @@ async function stopMonCam() {
   document.getElementById('btnVideoFile').disabled=false;
   document.getElementById('btnStopMon').style.display='none';
   document.getElementById('btnUnlock').style.display='none';
+  showBatchProgress(false);
+  S._wasBatch = false;
   updateCamPill(false);
   _setVideoSrc(false);
   toast(t('cam_off'),'info');
@@ -1563,9 +1597,44 @@ function updateCamPill(running) {
   pill.innerHTML = `<span class="cam-pill-dot"></span><span>${running?t('cam_on'):t('cam_off')}</span>`;
 }
 
+function showBatchProgress(visible) {
+  const panel = document.getElementById('batchProgressPanel');
+  if (panel) panel.style.display = visible ? 'block' : 'none';
+}
+
+function updateBatchProgress(bp) {
+  if (!bp || !bp.batch_mode) {
+    showBatchProgress(false);
+    return;
+  }
+  showBatchProgress(true);
+  const bar = document.getElementById('batchProgressBar');
+  const pct = document.getElementById('batchProgressPct');
+  const frames = document.getElementById('batchProgressFrames');
+  const fps = document.getElementById('batchProgressFps');
+  const eta = document.getElementById('batchProgressEta');
+  if (bar) bar.style.width = bp.percent + '%';
+  if (pct) pct.textContent = bp.percent + '%';
+  if (frames) frames.textContent = bp.current_frame + ' / ' + bp.total_frames + ' frames';
+  if (fps) fps.textContent = bp.fps_actual + ' fps';
+  if (eta) {
+    if (bp.fps_actual > 0 && bp.total_frames > 0) {
+      const remaining = (bp.total_frames - bp.current_frame) / bp.fps_actual;
+      const m = Math.floor(remaining / 60);
+      const s = Math.floor(remaining % 60);
+      eta.textContent = 'ETA: ' + (m > 0 ? m + 'm ' : '') + s + 's';
+    } else {
+      eta.textContent = 'ETA: —';
+    }
+  }
+}
+
 function renderFacePanel(faces) {
   const el=document.getElementById('facePanel');
-  if (!faces||!faces.length){ el.innerHTML=`<p class="text-muted text-sm">${t('no_faces')}</p>`; return; }
+  if (!faces||!faces.length){ el.innerHTML=`<p class="text-muted text-sm">${t('no_faces')}</p>`; S._lastFaceKey=''; return; }
+  const key=faces.map(f=>`${f.name}|${f.attentive}|${f.looking_down}|${f.uniform_on}`).join(';');
+  if (key===S._lastFaceKey) return;
+  S._lastFaceKey=key;
   el.innerHTML=faces.map(f=>{
     const isDown=f.looking_down;
     const led=isDown?'var(--warning)':f.attentive?'var(--success)':'#6B7280';
@@ -1893,13 +1962,15 @@ function renderStudentTable(rows) {
       ? new Date(s.created_at).toLocaleDateString(S.lang==='mn'?'mn-MN':'en-US',{year:'numeric',month:'short',day:'numeric'})
       : '—';
 
+    const avatar = s.photo_url
+      ? `<img src="${esc(s.photo_url)}?token=${encodeURIComponent(S.token)}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;flex-shrink:0" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div style="width:36px;height:36px;border-radius:10px;background:var(--accent-lt);color:var(--accent);display:none;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;flex-shrink:0">${initial}</div>`
+      : `<div style="width:36px;height:36px;border-radius:10px;background:var(--accent-lt);color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;flex-shrink:0">${initial}</div>`;
+
     return `<tr>
       <td style="color:var(--muted);font-size:.8rem">${i+1}</td>
       <td>
         <div style="display:flex;align-items:center;gap:10px">
-          <div style="width:36px;height:36px;border-radius:10px;background:var(--accent-lt);color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;flex-shrink:0">
-            ${initial}
-          </div>
+          ${avatar}
           <div>
             <div style="font-weight:600">${name}</div>
             ${s.alert_count_today > 0

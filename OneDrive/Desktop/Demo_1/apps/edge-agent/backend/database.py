@@ -12,6 +12,7 @@ import secrets
 import base64
 import hmac
 from datetime import date, datetime
+from typing import Optional
 from log_setup import get_logger
 log = get_logger(__name__)
 
@@ -22,10 +23,11 @@ _thread_local = threading.local()
 def get_db() -> sqlite3.Connection:
     """Return a per-thread SQLite connection (WAL mode, row factory)."""
     if not hasattr(_thread_local, "conn"):
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=10)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA busy_timeout=5000")
         _thread_local.conn = conn
     return _thread_local.conn
 
@@ -276,7 +278,7 @@ def save_student(name: str, class_name: str, role: str, embedding) -> int:
     return cur.lastrowid
 
 
-def find_matching_student(embedding, threshold: float = 0.50):
+def find_matching_student(embedding, threshold: float = 0.38):
     """Cosine-similarity lookup against enrolled face embeddings."""
     import numpy as np
     conn = get_db()
@@ -333,6 +335,28 @@ def update_attendance(student_id: int, is_attentive: bool):
             """INSERT INTO attendance (student_id, date, attention_frames, total_frames)
                VALUES (?, ?, ?, 1)""",
             (student_id, today, 1 if is_attentive else 0),
+        )
+    conn.commit()
+
+
+def mark_seat_attendance(student_id: int):
+    """Mark a student present via seat occupancy (ceiling camera mode).
+    Creates/updates today's attendance row without incrementing attention frames,
+    since gaze estimation is unreliable from top-down angles."""
+    conn = get_db()
+    today = date.today().isoformat()
+    exists = conn.execute(
+        "SELECT id FROM attendance WHERE student_id=? AND date=?", (student_id, today)
+    ).fetchone()
+    if exists:
+        conn.execute(
+            "UPDATE attendance SET last_seen=datetime('now') WHERE student_id=? AND date=?",
+            (student_id, today),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO attendance (student_id, date, attention_frames, total_frames) VALUES (?, ?, 0, 1)",
+            (student_id, today),
         )
     conn.commit()
 
@@ -563,6 +587,13 @@ def get_uniform_stats():
 
 # ── Student management ───────────────────────────────────────────────────────
 
+def get_student_by_id(student_id: int) -> Optional[dict]:
+    conn = get_db()
+    row = conn.execute("SELECT id, name, class_name, role FROM students WHERE id=?",
+                       (student_id,)).fetchone()
+    return dict(row) if row else None
+
+
 def get_all_students():
     """Return every enrolled student with today's attendance summary."""
     conn = get_db()
@@ -608,14 +639,16 @@ def delete_student(student_id: int) -> bool:
     ).fetchone()
     if not exists:
         return False
-    # Cascade delete related records
-    conn.execute("DELETE FROM attendance      WHERE student_id=?", (student_id,))
-    conn.execute("DELETE FROM alerts          WHERE student_id=?", (student_id,))
-    conn.execute("DELETE FROM attention_log   WHERE student_id=?", (student_id,))
-    conn.execute("DELETE FROM uniform_log     WHERE student_id=?", (student_id,))
-    conn.execute("DELETE FROM classroom_seats WHERE student_id=?", (student_id,))
-    conn.execute("DELETE FROM students        WHERE id=?",         (student_id,))
     conn.commit()
+    conn.execute("PRAGMA foreign_keys=OFF")
+    for tbl in ("attendance", "alerts", "attention_log", "uniform_log", "classroom_seats", "users"):
+        try:
+            conn.execute(f"DELETE FROM {tbl} WHERE student_id=?", (student_id,))
+        except Exception:
+            pass
+    conn.execute("DELETE FROM students WHERE id=?", (student_id,))
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys=ON")
     return True
 
 

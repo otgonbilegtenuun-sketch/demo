@@ -9,6 +9,7 @@ Architecture:
 
 import base64
 import os
+import queue
 import threading
 import time
 from collections import deque
@@ -18,6 +19,7 @@ import cv2
 import mediapipe as mp
 import numpy as np
 
+from appearance_tracker import AppearanceTracker
 from bullying_detector import BullyingDetector, distress_from_blendshapes
 from pose_analyzer import POSE_AVAILABLE, PoseAnalyzer
 from safety_detector import SafetyDetector
@@ -43,7 +45,7 @@ _MpImage            = mp.Image
 _ImageFormat        = mp.ImageFormat
 
 MODEL_PATH    = os.path.join(os.path.dirname(__file__), "face_landmarker.task")
-FACE_NAME_TTL = 6.0   # seconds a recognised name stays visible after last match
+FACE_NAME_TTL = 12.0  # seconds a recognised name stays visible after last match
 
 
 def _make_landmarker(num_faces: int = 30) -> _FaceLandmarker:
@@ -80,6 +82,84 @@ def _warm_deepface():
 
 _yolo_model = None
 _yolo_lock  = threading.Lock()
+
+
+# ── YuNet face detector ──────────────────────────────────────────────────────
+#
+# YuNet (cv2.FaceDetectorYN) is a small ONNX model that's ~2-3× better than
+# MediaPipe's bundled detector at small/profile faces in classroom footage.
+# We use it to produce bboxes; MediaPipe FaceLandmarker still runs per crop for
+# gaze landmarks + blendshapes (distress signal). If YuNet load fails (offline,
+# disk full, etc) we silently fall back to whole-frame MediaPipe detection.
+
+_YUNET_MODEL_FNAME = "face_detection_yunet_2023mar.onnx"
+_YUNET_MODEL_URL = (
+    "https://github.com/opencv/opencv_zoo/raw/main/models/"
+    "face_detection_yunet/face_detection_yunet_2023mar.onnx"
+)
+_yunet_detector = None
+_yunet_lock = threading.Lock()
+_yunet_input_size: tuple = (0, 0)
+_yunet_failed = False   # set after a load failure so we stop retrying
+
+
+def _yunet_model_path() -> str:
+    return os.path.join(os.path.dirname(__file__), _YUNET_MODEL_FNAME)
+
+
+def _ensure_yunet_model() -> Optional[str]:
+    """Auto-download the YuNet ONNX once. Returns path on success, None on failure."""
+    path = _yunet_model_path()
+    if os.path.exists(path) and os.path.getsize(path) > 100 * 1024:
+        return path
+    try:
+        import urllib.request
+        log.info(f"[YuNet] downloading model → {path}")
+        with urllib.request.urlopen(_YUNET_MODEL_URL, timeout=20) as resp:
+            data = resp.read()
+        if len(data) < 100 * 1024:
+            log.warning("[YuNet] downloaded file suspiciously small; skipping")
+            return None
+        with open(path, "wb") as f:
+            f.write(data)
+        log.info(f"[YuNet] model ready ({len(data)//1024} KB)")
+        return path
+    except Exception as e:
+        log.warning(f"[YuNet] download failed ({e}); falling back to MediaPipe-only detection")
+        return None
+
+
+def _get_yunet(input_w: int, input_h: int):
+    """Return a cv2.FaceDetectorYN sized for the current frame, or None on failure."""
+    global _yunet_detector, _yunet_input_size, _yunet_failed
+    if _yunet_failed:
+        return None
+    with _yunet_lock:
+        if _yunet_detector is None:
+            path = _ensure_yunet_model()
+            if path is None:
+                _yunet_failed = True
+                return None
+            try:
+                yunet_score = 0.40 if FEATURE_FLAGS.get("ceiling_mode") else 0.55
+                _yunet_detector = cv2.FaceDetectorYN.create(
+                    model=path, config="", input_size=(input_w, input_h),
+                    score_threshold=yunet_score, nms_threshold=0.30, top_k=200,
+                )
+                _yunet_input_size = (input_w, input_h)
+                log.info("[YuNet] detector loaded")
+            except Exception as e:
+                log.error(f"[YuNet] init failed: {e}")
+                _yunet_failed = True
+                return None
+        elif _yunet_input_size != (input_w, input_h):
+            try:
+                _yunet_detector.setInputSize((input_w, input_h))
+                _yunet_input_size = (input_w, input_h)
+            except Exception as e:
+                log.error(f"[YuNet] setInputSize error: {e}")
+                return None
+        return _yunet_detector
 
 
 def _get_yolo():
@@ -127,12 +207,13 @@ FEATURE_FLAGS = {
     "phone_detect":       True,    # kept on; teacher policy may still need it
     "pose_signals":       POSE_AVAILABLE,  # Optional MediaPipe Pose signals
     "safety_monitor":     True,
-    "fall_detect":        True,
+    "fall_detect":        False,   # too many false positives with seated students
     "running_detect":     False,   # hallway cameras should enable this
-    "restricted_zone_detect": True,
-    "after_hours_detect": True,
+    "restricted_zone_detect": False,
+    "after_hours_detect": False,   # off during dev/demo — triggers on any after-hours use
     "object_safety_detect": False, # extra YOLO pass; enable for hallway/security cams
     "camera_tamper_detect": True,
+    "ceiling_mode":       True,    # top-corner camera: seat-based attendance primary, face secondary
 }
 
 
@@ -182,8 +263,8 @@ class CameraProcessor:
         # YOLO person tracking
         self._tracked_persons: dict = {}    # track_id → (x1,y1,x2,y2)
         self._locked_id: Optional[int] = None
-        self._PERSON_TRACK_INTERVAL      = 20    # exam / locked-person modes
-        self._PERSON_TRACK_INTERVAL_BG   = 60    # bullying-only background mode
+        self._PERSON_TRACK_INTERVAL      = 15    # exam / locked-person / seat modes
+        self._PERSON_TRACK_INTERVAL_BG   = 30    # background mode (was 60, too slow for seats)
         self._frame_wh: tuple = (640, 480)  # (w,h) of last processed frame
 
         self._face_info: list = []
@@ -197,6 +278,7 @@ class CameraProcessor:
         self.on_uniform:       Optional[Callable] = None
         self.on_bullying_incident: Optional[Callable] = None
         self.on_safety_incident: Optional[Callable] = None
+        self.on_seat_attendance:  Optional[Callable] = None
 
         # Bullying / incident flagger — wires to YOLO tracks + blendshape distress
         self._bullying = BullyingDetector()
@@ -216,6 +298,17 @@ class CameraProcessor:
         self._clip_buffer: deque = deque(maxlen=180)
         self._clip_lock = threading.Lock()
         self._CLIP_SAMPLE_EVERY = 5     # encode 1-in-N frames
+
+        # Single-writer clip queue. Caps concurrent writers at 1, rejects new
+        # jobs when more than CLIP_QUEUE_MAX are pending. This prevents a
+        # burst of incidents from spawning N writer threads that all sleep
+        # for post_s+2s while contending on _clip_lock.
+        self._CLIP_QUEUE_MAX = 8
+        self._clip_jobs: "queue.Queue[dict]" = queue.Queue(maxsize=self._CLIP_QUEUE_MAX)
+        self._clip_worker = threading.Thread(
+            target=self._clip_writer_loop, daemon=True, name="clip-writer",
+        )
+        self._clip_worker.start()
 
         # Continuous recording (for eval data capture). Writes raw frames to MP4
         # while the live loop runs — the recorder takes the same processed frame
@@ -238,8 +331,19 @@ class CameraProcessor:
         self._seat_lock = threading.Lock()
         # Per-seat occupancy: seat_id -> {since: ts, last_seen: ts, track_id, name}
         self._seat_occupancy: dict = {}
-        self._SEAT_OCCUPY_S = 90.0      # arrived if occupied for 90 s
+        self._SEAT_OCCUPY_S = 30.0      # arrived if occupied for 30 s
+        self._seat_attendance_fired: set = set()   # seat_ids that already triggered attendance
         self._attention_disabled_ids: set = set()
+
+        # Top-view appearance re-identification
+        self._appearance = AppearanceTracker()
+        self._APPEARANCE_INTERVAL = 90    # re-ID every N frames (~6s at 15 fps)
+        self._appearance_last_frame: np.ndarray = None  # cached for calibration
+
+        # Batch (offline) video processing — no real-time constraint
+        self._batch_mode = False
+        self._batch_total_frames = 0
+        self._batch_start_time = 0.0
 
     # ── Properties ───────────────────────────────────────────────────────────
 
@@ -260,19 +364,81 @@ class CameraProcessor:
                 self._face_name_map.clear()
 
     @property
+    def batch_mode(self) -> bool:
+        return self._batch_mode
+
+    @property
+    def batch_progress(self) -> dict:
+        elapsed = time.time() - self._batch_start_time if self._batch_start_time else 0.0
+        fps_actual = self._frame_count / max(elapsed, 0.001) if elapsed > 0 else 0.0
+        total = self._batch_total_frames
+        current = self._frame_count
+        return {
+            "batch_mode":    self._batch_mode,
+            "current_frame": current,
+            "total_frames":  total,
+            "percent":       round(current / total * 100, 1) if total > 0 else 0,
+            "elapsed_s":     round(elapsed, 1),
+            "fps_actual":    round(fps_actual, 1),
+        }
+
+    @property
     def recognized_faces(self) -> list:
+        now = time.time()
         with self._lock:
-            return list(self._face_info)
+            out = []
+            for fi in self._face_info:
+                d = dict(fi)
+                fidx = fi.get("face_idx", -1)
+                bbox = fi.get("bbox")
+                entry = self._face_name_map.get(fidx)
+                if entry and (now - entry["ts"]) < FACE_NAME_TTL:
+                    d["name"] = entry["name"] or "Unknown"
+                elif bbox:
+                    best_iou = 0.3
+                    best_name = None
+                    for v in self._face_name_map.values():
+                        if (now - v["ts"]) >= FACE_NAME_TTL or not v.get("bbox"):
+                            continue
+                        iou = self._bbox_iou(bbox, v["bbox"])
+                        if iou > best_iou:
+                            best_iou = iou
+                            best_name = v["name"]
+                    if best_name:
+                        d["name"] = best_name
+                out.append(d)
+            return out
 
     def set_face_name(self, face_idx: int, name: Optional[str]):
+        bbox = None
         with self._lock:
-            self._face_name_map[face_idx] = {"name": name, "ts": time.time()}
+            if face_idx < len(self._face_info):
+                bbox = self._face_info[face_idx].get("bbox")
+            self._face_name_map[face_idx] = {
+                "name": name, "ts": time.time(), "bbox": bbox,
+            }
 
-    def _get_face_name(self, face_idx: int) -> str:
+    def _get_face_name(self, face_idx: int, bbox=None) -> str:
+        now = time.time()
         with self._lock:
             entry = self._face_name_map.get(face_idx)
-        if entry and (time.time() - entry["ts"]) < FACE_NAME_TTL:
-            return entry["name"] or "Unknown"
+            if entry and (now - entry["ts"]) < FACE_NAME_TTL:
+                return entry["name"] or "Unknown"
+            search_bbox = bbox
+            if not search_bbox and face_idx < len(self._face_info):
+                search_bbox = self._face_info[face_idx].get("bbox")
+            if search_bbox:
+                best_iou = 0.3
+                best_name = None
+                for v in self._face_name_map.values():
+                    if (now - v["ts"]) >= FACE_NAME_TTL or not v.get("bbox"):
+                        continue
+                    iou = self._bbox_iou(search_bbox, v["bbox"])
+                    if iou > best_iou:
+                        best_iou = iou
+                        best_name = v["name"]
+                if best_name:
+                    return best_name
         return "Unknown"
 
     def _prune_face_names(self, num_faces: int):
@@ -280,7 +446,7 @@ class CameraProcessor:
         with self._lock:
             stale = [
                 k for k, v in self._face_name_map.items()
-                if k >= num_faces and (now - v["ts"]) > FACE_NAME_TTL
+                if (now - v["ts"]) > FACE_NAME_TTL
             ]
             for k in stale:
                 del self._face_name_map[k]
@@ -298,28 +464,92 @@ class CameraProcessor:
         cap.set(cv2.CAP_PROP_FPS, 15)
         self._cap     = cap
         self._running = True
-        self._thread  = threading.Thread(target=self._loop, daemon=True)
+        self._seat_attendance_fired.clear()
+        self._thread  = threading.Thread(
+            target=self._supervised_loop,
+            args=(self._loop, "live"),
+            daemon=True, name="camera-loop",
+        )
         self._thread.start()
         return True
 
-    def start_from_file(self, path: str) -> bool:
-        """Start processing frames from a video file instead of a live camera."""
+    def start_from_file(self, path: str, batch: bool = False) -> bool:
+        """Start processing frames from a video file instead of a live camera.
+        When batch=True, processes as fast as hardware allows (no real-time pacing)
+        and skips MJPEG frame storage for efficiency."""
         if self._running:
             self.stop()
         cap = cv2.VideoCapture(path)
         if not cap.isOpened():
             return False
         self._cap     = cap
+        self._frame_count = 0
+        self._seat_attendance_fired.clear()
+        self._batch_mode = batch
+        if batch:
+            self._batch_total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
+            self._batch_start_time = time.time()
+        else:
+            self._batch_total_frames = 0
+            self._batch_start_time = 0.0
         self._running = True
         self._thread  = threading.Thread(
-            target=self._loop_file, args=(path,), daemon=True
+            target=self._supervised_loop,
+            args=(lambda: self._loop_file(path), "file"),
+            daemon=True, name="camera-loop-file",
         )
         self._thread.start()
         return True
 
+    def _supervised_loop(self, target, kind: str):
+        """Watchdog wrapper around _loop / _loop_file.
+
+        For live camera (kind='live'): if the loop dies on an unexpected
+        exception, log it and restart up to 3 times within 60 s. For file
+        playback (kind='file'): no restart — file ending is normal."""
+        restarts = 0
+        first_failure_ts = 0.0
+        while self._running:
+            try:
+                target()
+                return   # normal exit (loop checked _running and stopped)
+            except Exception as e:
+                log.error(f"[camera] {kind} loop crashed: {e}", exc_info=True)
+                if kind != "live":
+                    self._running = False
+                    return
+                now = time.time()
+                if (now - first_failure_ts) > 60:
+                    restarts = 0
+                    first_failure_ts = now
+                restarts += 1
+                if restarts > 3:
+                    log.error("[camera] watchdog: 3 crashes in 60s — giving up")
+                    self._running = False
+                    return
+                log.warning(f"[camera] watchdog: restarting loop (attempt {restarts}/3)")
+                # Reopen the capture device — driver state may be wedged
+                try:
+                    if self._cap is not None:
+                        try: self._cap.release()
+                        except Exception: pass
+                    cap = cv2.VideoCapture(0)
+                    if cap.isOpened():
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                        cap.set(cv2.CAP_PROP_FPS, 15)
+                        self._cap = cap
+                except Exception as e2:
+                    log.error(f"[camera] watchdog: capture reinit failed: {e2}")
+                time.sleep(1.0)
+
     def stop(self):
         self._running = False
+        self._batch_mode = False
+        self._batch_total_frames = 0
+        self._batch_start_time = 0.0
         self._phone_face_indices.clear()
+        self._seat_attendance_fired.clear()
         self.stop_recording()
         time.sleep(0.15)
         if self._cap:
@@ -327,13 +557,15 @@ class CameraProcessor:
             self._cap = None
         with self._lock:
             self._frame = None
+            self._face_info.clear()
+            self._face_name_map.clear()
 
     # ── Main loops ────────────────────────────────────────────────────────────
 
     def _loop(self):
         landmarker     = _make_landmarker(num_faces=8)
         last_recog     = 0.0
-        recog_interval = 5.0
+        recog_interval = 3.0
 
         try:
             while self._running:
@@ -352,7 +584,8 @@ class CameraProcessor:
                 # Exam / locked-person UI need responsive tracking (every 20 frames).
                 # Bullying detector only consumes it at ~5 Hz so 1-in-60 is enough.
                 _foreground = self._exam_mode or self._locked_id is not None
-                _interval = (self._PERSON_TRACK_INTERVAL if _foreground
+                _interval = (self._PERSON_TRACK_INTERVAL
+                             if (_foreground or self._seats)
                              else self._PERSON_TRACK_INTERVAL_BG)
                 if (self._frame_count % _interval == 0
                         and (_foreground or self._bullying.enabled or self._seats
@@ -360,8 +593,18 @@ class CameraProcessor:
                     try:
                         self._update_person_tracking(frame)
                         self._update_seat_occupancy(time.time())
+                        self._appearance_last_frame = frame.copy()
                     except Exception as e:
                         log.error(f"[camera] person track error: {e}")
+
+                # Appearance re-ID for ceiling cameras
+                if (FEATURE_FLAGS.get("ceiling_mode")
+                        and self._frame_count % self._APPEARANCE_INTERVAL == 0
+                        and self._tracked_persons):
+                    try:
+                        self._run_appearance_matching(frame)
+                    except Exception as e:
+                        log.error(f"[camera] appearance match error: {e}")
 
                 # Pose runs on its own faster cadence so brief actions aren't
                 # missed (YOLO tracking happens once every 60 frames in BG mode)
@@ -420,6 +663,8 @@ class CameraProcessor:
                 if (now - last_recog) >= recog_interval and faces:
                     try:
                         self._handle_recognition(frame, faces, now)
+                        for f in faces:
+                            f["name"] = self._get_face_name(f["face_idx"], f.get("bbox"))
                     except Exception as e:
                         log.error(f"[camera] recognition error: {e}")
                     last_recog = now
@@ -432,106 +677,141 @@ class CameraProcessor:
             landmarker.close()
 
     def _loop_file(self, path: str):
-        """Process every frame of a video file, then stop automatically."""
+        """Process a video file at 1x speed with frame skipping.
+        Non-batch: only MediaPipe + recognition (no YOLO/safety/bullying).
+        Batch: full pipeline, as fast as hardware allows."""
         landmarker     = _make_landmarker(num_faces=8)
         last_recog     = 0.0
         recog_interval = 5.0
         fps            = self._cap.get(cv2.CAP_PROP_FPS) or 25.0
-        frame_delay    = 1.0 / fps
+        is_batch       = self._batch_mode
+        recog_frame_interval = max(1, int(fps * recog_interval))
+
+        if is_batch:
+            analyze_every = 1
+        else:
+            analyze_every = max(1, int(round(fps / 5)))
+        frame_delay = analyze_every / fps
+        start_wall = time.time()
 
         try:
             while self._running:
-                t_iter = time.time()   # track iteration start for accurate pacing
+                t_iter = time.time()
 
-                ret, frame = self._cap.read()
-                if not ret:
-                    break   # end of file
+                frame = None
+                for _ in range(analyze_every):
+                    ret, f = self._cap.read()
+                    if not ret:
+                        break
+                    frame = f
+                    self._frame_count += 1
+                if frame is None:
+                    break
 
-                self._frame_count += 1
+                # Batch mode: full pipeline
+                if is_batch:
+                    _foreground = self._exam_mode or self._locked_id is not None
+                    _interval = (self._PERSON_TRACK_INTERVAL
+                                 if (_foreground or self._seats)
+                                 else self._PERSON_TRACK_INTERVAL_BG)
+                    if (self._frame_count % _interval == 0
+                            and (_foreground or self._bullying.enabled or self._seats
+                                 or FEATURE_FLAGS.get("safety_monitor"))):
+                        try:
+                            self._update_person_tracking(frame)
+                            self._update_seat_occupancy(time.time())
+                            self._appearance_last_frame = frame.copy()
+                        except Exception as e:
+                            log.error(f"[camera] person track error: {e}")
 
-                # Person tracking — frequency depends on what needs it.
-                # Exam / locked-person UI need responsive tracking (every 20 frames).
-                # Bullying detector only consumes it at ~5 Hz so 1-in-60 is enough.
-                _foreground = self._exam_mode or self._locked_id is not None
-                _interval = (self._PERSON_TRACK_INTERVAL if _foreground
-                             else self._PERSON_TRACK_INTERVAL_BG)
-                if (self._frame_count % _interval == 0
-                        and (_foreground or self._bullying.enabled or self._seats
-                             or FEATURE_FLAGS.get("safety_monitor"))):
-                    try:
-                        self._update_person_tracking(frame)
-                        self._update_seat_occupancy(time.time())
-                    except Exception as e:
-                        log.error(f"[camera] person track error: {e}")
+                    if (FEATURE_FLAGS.get("ceiling_mode")
+                            and self._frame_count % self._APPEARANCE_INTERVAL == 0
+                            and self._tracked_persons):
+                        try:
+                            self._run_appearance_matching(frame)
+                        except Exception as e:
+                            log.error(f"[camera] appearance match error: {e}")
 
-                # Pose runs on its own faster cadence so brief actions aren't
-                # missed (YOLO tracking happens once every 60 frames in BG mode)
-                if (self._bullying.enabled and not self._exam_mode
-                        and self._tracked_persons
-                        and self._frame_count % self._POSE_INTERVAL == 0):
-                    try:
-                        self._run_pose_on_tracks(frame, time.time())
-                    except Exception as e:
-                        log.error(f"[camera] pose error: {e}")
+                    if (self._bullying.enabled and not self._exam_mode
+                            and self._tracked_persons
+                            and self._frame_count % self._POSE_INTERVAL == 0):
+                        try:
+                            self._run_pose_on_tracks(frame, time.time())
+                        except Exception as e:
+                            log.error(f"[camera] pose error: {e}")
 
                 try:
                     annotated, faces = self._process_frame(frame.copy(), landmarker)
                 except Exception as e:
                     log.error(f"[camera] _process_frame error: {e}")
-                    time.sleep(0.05)
+                    if not is_batch:
+                        time.sleep(0.05)
                     continue
 
                 with self._lock:
-                    self._frame     = annotated
+                    if not is_batch:
+                        self._frame = annotated
                     self._face_info = faces
 
                 now = time.time()
 
-                # Push annotated frame to the clip ring buffer (sampled)
-                if self._frame_count % self._CLIP_SAMPLE_EVERY == 0:
-                    self._push_clip_frame(annotated, now)
-                # Continuous eval recording — every frame, no sampling
-                self._push_recorder_frame(annotated)
+                if not is_batch:
+                    if self._frame_count % self._CLIP_SAMPLE_EVERY == 0:
+                        self._push_clip_frame(annotated, now)
+                    self._push_recorder_frame(annotated)
 
-                if (FEATURE_FLAGS.get("phone_detect")
-                        and self._exam_mode
-                        and self._frame_count % self._YOLO_INTERVAL == 0
-                        and faces):
-                    try:
-                        self._update_phone_detection(frame, faces)
-                        self._check_phone_alerts(now)
-                    except Exception as e:
-                        log.error(f"[camera] YOLO phone error: {e}")
+                if is_batch:
+                    if (FEATURE_FLAGS.get("phone_detect")
+                            and self._exam_mode
+                            and self._frame_count % self._YOLO_INTERVAL == 0
+                            and faces):
+                        try:
+                            self._update_phone_detection(frame, faces)
+                            self._check_phone_alerts(now)
+                        except Exception as e:
+                            log.error(f"[camera] YOLO phone error: {e}")
 
-                if (FEATURE_FLAGS.get("safety_monitor")
-                        and FEATURE_FLAGS.get("object_safety_detect")
-                        and self._frame_count % self._SAFETY_OBJECT_INTERVAL == 0):
-                    self._update_safety_objects(frame)
+                    if (FEATURE_FLAGS.get("safety_monitor")
+                            and FEATURE_FLAGS.get("object_safety_detect")
+                            and self._frame_count % self._SAFETY_OBJECT_INTERVAL == 0):
+                        self._update_safety_objects(frame)
 
-                if (FEATURE_FLAGS.get("safety_monitor")
-                        and self._frame_count % self._SAFETY_INTERVAL == 0):
-                    self._run_safety_detector(frame, now)
+                    if (FEATURE_FLAGS.get("safety_monitor")
+                            and self._frame_count % self._SAFETY_INTERVAL == 0):
+                        self._run_safety_detector(frame, now)
 
-                # Bullying / incident flagger (gated to non-exam inside)
-                if self._frame_count % self._BULLYING_INTERVAL == 0:
-                    self._run_bullying_detector(faces, now)
+                    if self._frame_count % self._BULLYING_INTERVAL == 0:
+                        self._run_bullying_detector(faces, now)
 
-                if (now - last_recog) >= recog_interval and faces:
+                if is_batch:
+                    do_recog = (self._frame_count % recog_frame_interval == 0) and faces
+                else:
+                    do_recog = (now - last_recog) >= recog_interval and faces
+                if do_recog:
                     try:
                         self._handle_recognition(frame, faces, now)
+                        for f in faces:
+                            f["name"] = self._get_face_name(f["face_idx"], f.get("bbox"))
                     except Exception as e:
                         log.error(f"[camera] recognition error: {e}")
                     last_recog = now
 
-                # Sleep only the remaining time to maintain 1x playback speed
-                elapsed = time.time() - t_iter
-                time.sleep(max(0.0, frame_delay - elapsed))
+                if not is_batch:
+                    video_pos = self._frame_count / fps
+                    wall_elapsed = time.time() - start_wall
+                    if video_pos > wall_elapsed:
+                        time.sleep(video_pos - wall_elapsed)
         except Exception as e:
             log.error(f"[camera] file loop error: {e}")
         finally:
             landmarker.close()
+            was_batch = self._batch_mode
             self._running = False
-            log.info("[camera] Video file processing complete")
+            self._batch_mode = False
+            if was_batch:
+                log.info(f"[camera] Batch processing complete — {self._frame_count} frames")
+            else:
+                log.info("[camera] Video file processing complete")
 
     # ── Continuous recording (for eval capture) ──────────────────────────────
 
@@ -691,10 +971,13 @@ class CameraProcessor:
         return None
 
     def _update_seat_occupancy(self, now: float):
-        """Update _seat_occupancy from current tracked persons."""
+        """Update _seat_occupancy from current tracked persons.
+        When a seat with an assigned student has been occupied for >= _SEAT_OCCUPY_S,
+        fire on_seat_attendance once per session."""
         seats = self._seats_snapshot()
         if not seats:
             return
+        seat_lookup = {s["id"]: s for s in seats}
         # For each tracked person, find seat by bbox center
         seat_assigned: dict = {}
         for tid, (x1, y1, x2, y2) in self._tracked_persons.items():
@@ -712,22 +995,110 @@ class CameraProcessor:
             else:
                 entry["last_seen"] = now
                 entry["track_id"]  = tid
-        # Drop occupancy for seats not seen in last 5 s
+            # Fire seat attendance when threshold crossed
+            occ = self._seat_occupancy.get(sid)
+            if (occ and sid not in self._seat_attendance_fired
+                    and (now - occ["since"]) >= self._SEAT_OCCUPY_S):
+                seat_def = seat_lookup.get(sid)
+                if seat_def and seat_def.get("student_id"):
+                    self._seat_attendance_fired.add(sid)
+                    if self.on_seat_attendance:
+                        try:
+                            self.on_seat_attendance(
+                                sid, seat_def["student_id"],
+                                seat_def.get("student_name", "Unknown"))
+                        except Exception as e:
+                            log.error(f"[camera] on_seat_attendance error: {e}")
+        # Drop occupancy for seats not seen in last 30 s — YOLO can lose
+        # tracks momentarily (person shifts, partial occlusion). A real departure
+        # takes a student physically leaving the seat for >30 s.
         for sid in list(self._seat_occupancy.keys()):
-            if (now - self._seat_occupancy[sid]["last_seen"]) > 5.0:
+            if (now - self._seat_occupancy[sid]["last_seen"]) > 30.0:
                 del self._seat_occupancy[sid]
 
     def get_seat_occupancy_snapshot(self) -> list:
-        """Snapshot for API consumers — list of {seat_id, occupied_for_s}."""
+        """Snapshot for API consumers."""
         now = time.time()
         return [
             {
-                "seat_id":          sid,
-                "occupied_for_s":   round(now - v["since"], 1),
+                "seat_id":            sid,
+                "occupied_for_s":     round(now - v["since"], 1),
                 "considered_present": (now - v["since"]) >= self._SEAT_OCCUPY_S,
+                "attendance_marked":  sid in self._seat_attendance_fired,
             }
             for sid, v in self._seat_occupancy.items()
         ]
+
+    # ── Appearance re-identification (ceiling cameras) ─────────────────────
+
+    def calibrate_appearance(self, seat_id: int, student_id: int,
+                             student_name: str) -> bool:
+        """Capture current appearance of the person at seat_id.
+        Uses the latest frame + YOLO person bbox at that seat."""
+        frame = self._appearance_last_frame
+        if frame is None:
+            frame = self._frame
+        if frame is None:
+            return False
+        seats = self._seats_snapshot()
+        seat_def = next((s for s in seats if s["id"] == seat_id), None)
+        if not seat_def:
+            return False
+        # Find YOLO person bbox at this seat
+        for tid, (x1, y1, x2, y2) in self._tracked_persons.items():
+            sid = self._seat_for_bbox((x1, y1, x2, y2))
+            if sid == seat_id:
+                h, w = frame.shape[:2]
+                cx1 = max(0, x1)
+                cy1 = max(0, y1)
+                cx2 = min(w, x2)
+                cy2 = min(h, y2)
+                crop = frame[cy1:cy2, cx1:cx2]
+                return self._appearance.calibrate_student(
+                    student_id, student_name, crop)
+        return False
+
+    def _run_appearance_matching(self, frame: np.ndarray):
+        """Match tracked persons against calibrated appearance profiles.
+        Updates seat-student associations when a match is found."""
+        if not self._appearance.is_calibrated:
+            return
+        if not FEATURE_FLAGS.get("ceiling_mode"):
+            return
+        seats = self._seats_snapshot()
+        if not seats:
+            return
+        h, w = frame.shape[:2]
+        for tid, (x1, y1, x2, y2) in self._tracked_persons.items():
+            cx1 = max(0, x1)
+            cy1 = max(0, y1)
+            cx2 = min(w, x2)
+            cy2 = min(h, y2)
+            if (cx2 - cx1) < 30 or (cy2 - cy1) < 60:
+                continue
+            crop = frame[cy1:cy2, cx1:cx2]
+            sid, name, conf = self._appearance.identify(crop)
+            if sid is not None and conf >= 0.55:
+                seat_id = self._seat_for_bbox((x1, y1, x2, y2))
+                if seat_id is not None:
+                    self._set_track_appearance_name(tid, name, conf)
+
+    def _set_track_appearance_name(self, tid: int, name: str, confidence: float):
+        """Store an appearance-matched name for a YOLO track."""
+        with self._lock:
+            for f in self._face_info:
+                bbox = f.get("bbox")
+                if not bbox:
+                    continue
+                tbbox = self._tracked_persons.get(tid)
+                if tbbox and self._bbox_iou(bbox, tbbox) > 0.3:
+                    if f.get("name", "Unknown") == "Unknown":
+                        f["name"] = name
+                        f["appearance_conf"] = confidence
+
+    @property
+    def appearance_tracker(self) -> AppearanceTracker:
+        return self._appearance
 
     # ── Bullying / incident flagging ──────────────────────────────────────────
 
@@ -928,6 +1299,51 @@ class CameraProcessor:
             writer.release()
         return path
 
+    def enqueue_clip(self, center_ts: float, pre_s: float = 5.0,
+                     post_s: float = 10.0, fps: int = 12,
+                     on_done: Optional[Callable[[Optional[str]], None]] = None) -> bool:
+        """Queue an incident clip dump for the dedicated writer thread.
+
+        Returns True if accepted, False if the queue is full (overload — caller
+        should keep the DB row but accept that this incident has no replay)."""
+        job = {
+            "center_ts": float(center_ts),
+            "pre_s":     float(pre_s),
+            "post_s":    float(post_s),
+            "fps":       int(fps),
+            "on_done":   on_done,
+        }
+        try:
+            self._clip_jobs.put_nowait(job)
+            return True
+        except queue.Full:
+            log.warning(f"[camera] clip queue full ({self._CLIP_QUEUE_MAX}); dropping clip for ts={center_ts:.0f}")
+            if on_done:
+                try: on_done(None)
+                except Exception: pass
+            return False
+
+    def _clip_writer_loop(self):
+        """Single-writer drain loop. Blocks on the queue, runs dump_clip
+           sequentially. Survives individual job errors."""
+        while True:
+            try:
+                job = self._clip_jobs.get()
+            except Exception:
+                continue
+            try:
+                path = self.dump_clip(
+                    job["center_ts"], pre_s=job["pre_s"],
+                    post_s=job["post_s"], fps=job["fps"],
+                )
+            except Exception as e:
+                log.error(f"[camera] clip writer error: {e}")
+                path = None
+            cb = job.get("on_done")
+            if cb:
+                try: cb(path)
+                except Exception as e: log.error(f"[camera] clip on_done error: {e}")
+
     # ── YOLOv8 phone detection ────────────────────────────────────────────────
 
     def _update_phone_detection(self, frame: np.ndarray, faces: list):
@@ -1034,57 +1450,54 @@ class CameraProcessor:
             for face_idx, mp_face in enumerate(faces):
                 x1, y1, x2, y2 = mp_face["bbox"]
 
-                # Add 25 % padding around the MediaPipe bbox for better alignment
                 fw, fh  = max(x2 - x1, 1), max(y2 - y1, 1)
-                pad_x   = int(fw * 0.25)
-                pad_y   = int(fh * 0.25)
+                pad_pct = 0.40 if FEATURE_FLAGS.get("ceiling_mode") else 0.25
+                pad_x   = int(fw * pad_pct)
+                pad_y   = int(fh * pad_pct)
                 cx1 = max(0, x1 - pad_x)
                 cy1 = max(0, y1 - pad_y)
                 cx2 = min(w, x2 + pad_x)
                 cy2 = min(h, y2 + pad_y)
 
-                # Skip crops that are too small to embed reliably
-                if (cx2 - cx1) < 40 or (cy2 - cy1) < 40:
+                min_crop = 28 if FEATURE_FLAGS.get("ceiling_mode") else 40
+                if (cx2 - cx1) < min_crop or (cy2 - cy1) < min_crop:
                     continue
 
                 crop = frame[cy1:cy2, cx1:cx2]
 
                 try:
-                    res = DeepFace.represent(
-                        img_path=crop,
-                        model_name="ArcFace",
-                        enforce_detection=False,
-                        detector_backend="opencv",
-                        align=True,
-                    )
-                    if not res:
-                        continue
-
-                    # Use the result whose facial area is largest
-                    # (avoid the whole-crop fallback by checking area ratio)
-                    best = max(res, key=lambda r: r.get("facial_area", {}).get("w", 0)
-                                                  * r.get("facial_area", {}).get("h", 0))
-                    area = best.get("facial_area", {})
-                    rw, rh = area.get("w", 0), area.get("h", 0)
-                    crop_h, crop_w = crop.shape[:2]
-
-                    # If detected region covers >85 % of the crop it's likely the
-                    # whole-image fallback — skip to avoid garbage embeddings
-                    if rw * rh > crop_w * crop_h * 0.85:
-                        continue
-
-                    emb = np.array(best["embedding"], dtype=np.float32)
-                    face_data.append((face_idx, emb,
-                                      mp_face["attentive"], mp_face["sideways"]))
+                    emb = None
+                    # ssd first — opencv Haar cascade fails on pre-cropped faces
+                    for backend in ("ssd", "skip"):
+                        try:
+                            res = DeepFace.represent(
+                                img_path=crop,
+                                model_name="ArcFace",
+                                enforce_detection=False,
+                                detector_backend=backend,
+                                align=(backend != "skip"),
+                            )
+                            if res:
+                                emb = np.array(res[0]["embedding"], dtype=np.float32)
+                                break
+                        except Exception:
+                            continue
+                    if emb is not None:
+                        face_data.append((face_idx, emb,
+                                          mp_face["attentive"], mp_face["sideways"]))
 
                 except Exception as e:
-                    pass   # single face failed — keep going
+                    log.debug(f"[recog] face#{face_idx} embed fail: {e}")
 
         except Exception as e:
             log.error(f"[camera] recognition error: {e}")
             return
 
-        matched_indices = self.on_recognition(face_data) or set() if face_data else set()
+        if face_data:
+            log.info(f"[recog] {len(face_data)}/{len(faces)} embeddings produced")
+        matched_indices = (self.on_recognition(face_data) or set()) if face_data else set()
+        if matched_indices:
+            log.info(f"[recog] matched {len(matched_indices)} faces")
 
         # Per-face uniform callbacks
         for idx, f in enumerate(faces):
@@ -1100,6 +1513,47 @@ class CameraProcessor:
 
     # ── Frame processing (MediaPipe display layer) ────────────────────────────
 
+    @staticmethod
+    def _bbox_iou(a, b) -> float:
+        ax1, ay1, ax2, ay2 = a
+        bx1, by1, bx2, by2 = b
+        ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+        ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+        iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
+        inter = iw * ih
+        if inter == 0:
+            return 0.0
+        ua = (ax2 - ax1) * (ay2 - ay1) + (bx2 - bx1) * (by2 - by1) - inter
+        return inter / ua if ua > 0 else 0.0
+
+    def _yunet_extra_bboxes(self, frame: np.ndarray, existing_bboxes: list) -> list:
+        """Run YuNet on the frame and return bboxes that don't overlap any
+           existing MediaPipe bbox by >40% IoU. Returns [] if YuNet unavailable."""
+        h, w = frame.shape[:2]
+        det = _get_yunet(w, h)
+        if det is None:
+            return []
+        try:
+            ret, faces = det.detect(frame)
+        except Exception as e:
+            log.debug(f"[YuNet] detect error: {e}")
+            return []
+        if faces is None or len(faces) == 0:
+            return []
+        out = []
+        for f in faces:
+            x, y, fw, fh = int(f[0]), int(f[1]), int(f[2]), int(f[3])
+            # 10 px is YuNet's reliable lower bound; below that we get noise
+            if fw < 10 or fh < 10:
+                continue
+            x1 = max(0, x - 6); y1 = max(0, y - 6)
+            x2 = min(w, x + fw + 6); y2 = min(h, y + fh + 6)
+            bbox = (x1, y1, x2, y2)
+            if any(self._bbox_iou(bbox, eb) > 0.4 for eb in existing_bboxes):
+                continue
+            out.append(bbox)
+        return out
+
     def _process_frame(self, frame: np.ndarray, landmarker) -> tuple:
         h, w = frame.shape[:2]
         self._frame_wh = (w, h)   # used by lock_at_point
@@ -1108,8 +1562,12 @@ class CameraProcessor:
         # Scale up for better detection of small/distant faces.
         # Landmarks are returned in [0,1] normalised coords so bounding boxes
         # map back to original dimensions automatically via lm.x*w, lm.y*h.
-        SCALE = 1.0
-        detect_rgb = cv2.resize(rgb, (int(w * SCALE), int(h * SCALE)))
+        # SCALE > 1 helps classroom shots where each face is only ~20-40 px wide.
+        SCALE = 1.5 if min(w, h) < 600 else 1.0
+        if SCALE != 1.0:
+            detect_rgb = cv2.resize(rgb, (int(w * SCALE), int(h * SCALE)))
+        else:
+            detect_rgb = rgb
         mp_img = _MpImage(image_format=_ImageFormat.SRGB, data=detect_rgb)
         result = landmarker.detect(mp_img)
 
@@ -1119,9 +1577,13 @@ class CameraProcessor:
 
         faces = []
         for face_idx, face_lms in enumerate(result.face_landmarks or []):
-            lms       = face_lms
-            attentive = _is_attentive(lms)
-            sideways  = _is_looking_sideways(lms)
+            lms = face_lms
+            if FEATURE_FLAGS.get("ceiling_mode"):
+                attentive = True
+                sideways  = False
+            else:
+                attentive = _is_attentive(lms)
+                sideways  = _is_looking_sideways(lms)
 
             bs = blendshape_lists[face_idx] if face_idx < len(blendshape_lists) else None
             distress = distress_from_blendshapes(bs)
@@ -1134,7 +1596,7 @@ class CameraProcessor:
             y2 = min(h, int(max(ys)) + 10)
 
             uniform_on     = _detect_uniform(frame, x1, x2, y2, h, w)
-            name           = self._get_face_name(face_idx)
+            name           = self._get_face_name(face_idx, bbox=(x1, y1, x2, y2))
             is_unknown     = name == "Unknown"
             phone_detected = self._exam_mode and (face_idx in self._phone_face_indices)
 
@@ -1217,6 +1679,35 @@ class CameraProcessor:
                 "distress":    distress,
             })
 
+        # YuNet additive pre-pass: any high-confidence faces MediaPipe missed
+        # (typical for small/profile faces in classroom-wide shots) get added as
+        # detection-only entries — no gaze/blendshape signal, but at least a
+        # bbox so YOLO person tracking can label them and recognition can run.
+        existing_bboxes = [f["bbox"] for f in faces]
+        extras = self._yunet_extra_bboxes(frame, existing_bboxes)
+        for extra_bbox in extras:
+            ex1, ey1, ex2, ey2 = extra_bbox
+            face_idx = len(faces)
+            name = self._get_face_name(face_idx, bbox=(ex1, ey1, ex2, ey2))
+            phone_detected = self._exam_mode and (face_idx in self._phone_face_indices)
+
+            color = (0, 185, 80)         # default: attentive-green
+            cv2.rectangle(frame, (ex1, ey1), (ex2, ey2), color, 2)
+            cv2.putText(frame, name, (ex1, ey1 - 7),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
+
+            faces.append({
+                "face_idx":    face_idx,
+                "attentive":   True,     # no landmarks → assume attentive (no false sideways)
+                "sideways":    False,
+                "looking_down": phone_detected,
+                "uniform_on":  None,
+                "name":        name,
+                "bbox":        (ex1, ey1, ex2, ey2),
+                "distress":    None,
+                "_yunet_only": True,
+            })
+
         self._prune_face_names(len(faces))
 
         # ── Person tracking overlay ──────────────────────────────────────────
@@ -1290,7 +1781,7 @@ class CameraProcessor:
                 cv2.putText(ph, "Камер эхлуулэх товчийг дарна уу", (115, 260),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.55, (120, 120, 140), 1)
                 frame = ph
-            _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 92])
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n\r\n"
@@ -1338,3 +1829,48 @@ def process_enrollment_image(image_b64: str) -> Optional[np.ndarray]:
     except Exception as e:
         log.error(f"[camera] enroll image error: {e}")
         return None
+
+
+# ── CameraManager (multi-camera scaffold for v0.3) ───────────────────────────
+#
+# Today the system runs a single CameraProcessor pinned to camera_id=1. The
+# manager is here so v0.3 can wire many RTSP streams without changing every
+# call site. The single-camera path is preserved: app.py creates one manager
+# and treats it as the camera for the duration of v0.1/v0.2.
+class CameraManager:
+    """Multi-camera registry. Each entry is a (camera_id, classroom_id, processor)
+       tuple. For v0.1 we register exactly one processor with id=1."""
+
+    def __init__(self):
+        self._cams: dict = {}     # camera_id -> {"processor": CameraProcessor,
+                                  #               "classroom_id": int, "name": str}
+        self._lock = threading.Lock()
+        self._default_id: int = 1
+
+    def register(self, processor: "CameraProcessor", camera_id: int = 1,
+                 classroom_id: int = 1, name: str = "Camera 1"):
+        with self._lock:
+            self._cams[camera_id] = {
+                "processor":    processor,
+                "classroom_id": classroom_id,
+                "name":         name,
+            }
+            self._default_id = camera_id
+
+    def get(self, camera_id: Optional[int] = None) -> Optional["CameraProcessor"]:
+        with self._lock:
+            cid = camera_id if camera_id is not None else self._default_id
+            entry = self._cams.get(cid)
+        return entry["processor"] if entry else None
+
+    def list(self) -> list:
+        with self._lock:
+            return [
+                {"camera_id": cid, "classroom_id": e["classroom_id"],
+                 "name": e["name"], "running": e["processor"].is_running}
+                for cid, e in sorted(self._cams.items())
+            ]
+
+    @property
+    def default_id(self) -> int:
+        return self._default_id

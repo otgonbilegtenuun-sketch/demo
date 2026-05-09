@@ -17,12 +17,12 @@ EDGE_FRONTEND = ROOT / "apps" / "edge-agent" / "frontend"
 
 
 if __name__ == "__main__":
-    # Watch only the source dirs. Watching the entire OneDrive-synced repo
-    # triggers reload churn from background sync events and locks the worker.
+    import sys
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
     uvicorn.run(
         "app:app",
         host="0.0.0.0",
-        port=8080,
+        port=port,
         reload=True,
         reload_dirs=[str(EDGE_BACKEND), str(EDGE_FRONTEND)],
         app_dir=str(EDGE_BACKEND),

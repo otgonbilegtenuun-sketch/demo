@@ -138,7 +138,6 @@ def _get_token_required(token_payload=Depends(_get_token_optional)):
         raise HTTPException(401, detail="Нэвтрээгүй байна")
     user = db.get_user_by_id(token_payload.get("id"))
     if not user:
-        _note_login_result(username, request, False)
         raise HTTPException(401, detail="Хэрэглэгч олдсонгүй")
     token_payload["role"] = user["role"]
     token_payload["student_id"] = user.get("student_id")
@@ -557,6 +556,7 @@ def _on_faces_recognized(face_data: list) -> set:
     candidates = []
     for face_idx, embedding, attentive, sideways in face_data:
         student, sim = db.find_matching_student(embedding)
+        log.info(f"[recog] face#{face_idx} best_sim={sim:.3f} match={student['name'] if student else 'none'}")
         if student:
             candidates.append((sim, face_idx, student, attentive, sideways))
 
@@ -722,12 +722,29 @@ def _finalize_incident_clip(incident_id: int, path: Optional[str]):
         log.error(f"[BULLYING] clip finalize error #{incident_id}: {e}")
 
 
+def _on_seat_attendance(seat_id: int, student_id: int, student_name: str):
+    """Called when YOLO confirms a person at an assigned seat for >= 90 s.
+    Primary attendance mechanism for ceiling cameras where face recognition
+    is unreliable due to the top-down viewing angle."""
+    try:
+        db.mark_seat_attendance(student_id)
+        EVENT_BUS.publish("seat_attendance", {
+            "seat_id": seat_id,
+            "student_id": student_id,
+            "student_name": student_name,
+        })
+        log.info(f"[SEAT] attendance: {student_name} (seat #{seat_id})")
+    except Exception as e:
+        log.error(f"[SEAT] attendance error: {e}")
+
+
 camera.on_recognition       = _on_faces_recognized
 camera.on_unknown_face      = _on_unknown_face
 camera.on_phone_suspect     = _on_phone_suspect
 camera.on_uniform           = _on_uniform
 camera.on_bullying_incident = _on_bullying_incident
 camera.on_safety_incident   = _on_safety_incident
+camera.on_seat_attendance   = _on_seat_attendance
 
 
 DEFAULT_SAFETY_CONFIG = {
@@ -1096,11 +1113,15 @@ def _safe_upload_path(name: Optional[str], default: str) -> str:
 
 @app.post("/api/video/upload")
 async def video_upload(file: UploadFile = File(...),
+                       batch: bool = False,
                        token_payload=Depends(require_roles("admin"))):
     """Upload a video file and process it as if it were a live camera feed.
 
     Streams the upload to disk in chunks (1 MB) so memory stays flat even for
-    multi-GB files; enforces an extension allowlist and a size cap."""
+    multi-GB files; enforces an extension allowlist and a size cap.
+
+    Pass ?batch=true to enable batch mode: processes frames as fast as possible
+    without MJPEG streaming, suitable for offline analysis of recorded video."""
     save_path = _safe_upload_path(file.filename, "upload.mp4")
     written = 0
     try:
@@ -1123,13 +1144,13 @@ async def video_upload(file: UploadFile = File(...),
         except OSError: pass
         raise HTTPException(500, f"Upload failed: {e}")
 
-    ok = await run_in_threadpool(camera.start_from_file, save_path)
+    ok = await run_in_threadpool(camera.start_from_file, save_path, batch)
     if not ok:
         try: os.remove(save_path)
         except OSError: pass
         raise HTTPException(400, "Видео файл нээгдсэнгүй. Формат дэмжигдэж байна уу?")
-    _audit("video.upload", token_payload, "upload", os.path.basename(save_path), f"{written} bytes")
-    return {"status": "started", "filename": os.path.basename(save_path)}
+    _audit("video.upload", token_payload, "upload", os.path.basename(save_path), f"{written} bytes batch={batch}")
+    return {"status": "started", "filename": os.path.basename(save_path), "batch": batch}
 
 
 @app.get("/api/cameras")
@@ -1208,13 +1229,20 @@ async def camera_status(_=Depends(require_roles("admin"))):
             "running": True,
             "exam_mode": camera.exam_mode,
             "face_count": len(faces),
+            "batch": {
+                "batch_mode": False, "current_frame": 0,
+                "total_frames": 0, "percent": 0,
+                "elapsed_s": 0, "fps_actual": 0,
+            },
             "faces": faces,
         }
-    faces = camera.recognized_faces
+    faces = camera.recognized_faces if camera.is_running else []
+    bp = camera.batch_progress
     return {
         "running":    camera.is_running,
         "exam_mode":  camera.exam_mode,
         "face_count": len(faces),
+        "batch":      bp,
         "faces": [
             {
                 "name":         f.get("name", "Unknown"),
@@ -1399,7 +1427,13 @@ async def parent_history(days: int = 14, token_payload=Depends(require_roles("pa
 async def list_students(_=Depends(require_roles("teacher", "admin"))):
     if _demo_enabled():
         return _demo_students()
-    return get_all_students()
+    students = get_all_students()
+    for s in students:
+        safe = "".join(ch if ch.isalnum() or ch in (" ", "_", "-", ".") else "_" for ch in s["name"])
+        safe = safe.strip(" .")[:80] or f"student_{s['id']}"
+        photo_path = os.path.join(PHOTOS_DIR, safe, "1.jpg")
+        s["photo_url"] = f"/photos/{safe}/1.jpg" if os.path.exists(photo_path) else None
+    return students
 
 
 @app.delete("/api/students/{student_id}")
@@ -1451,6 +1485,7 @@ async def _ws_status_loop(ws: WebSocket):
     try:
         while True:
             faces = camera.recognized_faces
+            bp = camera.batch_progress
             await ws.send_json({
                 "type": "camera_status",
                 "ts":   time.time(),
@@ -1458,6 +1493,7 @@ async def _ws_status_loop(ws: WebSocket):
                     "running":    camera.is_running,
                     "exam_mode":  camera.exam_mode,
                     "face_count": len(faces),
+                    "batch":      bp,
                     "faces": [
                         {
                             "name":         f.get("name", "Unknown"),
@@ -1519,9 +1555,8 @@ async def bullying_stats(_=Depends(require_roles("teacher", "admin"))):
         pending = sum(1 for r in rows if not r["reviewed"])
         return {
             "today": len(rows),
-            "week_total": len(rows),
-            "pending": pending,
-            "reviewed_week": len(rows) - pending,
+            "week": len(rows),
+            "pending_review": pending,
             "by_signal_week": [
                 {"primary_signal": "crowding", "count": 1},
                 {"primary_signal": "fall_detected", "count": 1},
@@ -1667,6 +1702,41 @@ async def snapshot(_=Depends(require_roles("teacher", "admin"))):
         raise HTTPException(500, "encode failed")
     from fastapi.responses import Response
     return Response(content=buf.tobytes(), media_type="image/jpeg")
+
+
+# ── Appearance re-identification (ceiling cameras) ───────────────────────────
+
+@app.post("/api/appearance/calibrate")
+async def appearance_calibrate(token_payload=Depends(require_roles("teacher", "admin"))):
+    """Auto-calibrate appearance for all occupied seats that have assigned students.
+    Teacher calls this once at the start of class after confirming seating."""
+    if not camera.is_running:
+        raise HTTPException(400, "Camera not running")
+    seats = db.get_seat_map("Class A")
+    calibrated = []
+    for seat in seats:
+        sid = seat.get("student_id")
+        if not sid:
+            continue
+        student = db.get_student_by_id(sid)
+        if not student:
+            continue
+        ok = camera.calibrate_appearance(
+            seat["id"], sid, student["name"])
+        if ok:
+            calibrated.append({"seat_id": seat["id"],
+                               "student_id": sid,
+                               "student_name": student["name"]})
+    _audit("appearance.calibrate", token_payload, "system", "", f"{len(calibrated)} students")
+    return {"calibrated": len(calibrated), "students": calibrated}
+
+
+@app.get("/api/appearance/status")
+async def appearance_status(_=Depends(require_roles("teacher", "admin"))):
+    return {
+        "calibrated": camera.appearance_tracker.is_calibrated,
+        "profiles": camera.appearance_tracker.get_profiles_summary(),
+    }
 
 
 # ── Per-student behavior profile ──────────────────────────────────────────────
