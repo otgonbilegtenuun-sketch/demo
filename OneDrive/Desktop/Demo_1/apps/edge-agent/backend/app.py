@@ -1256,7 +1256,6 @@ async def camera_status(_=Depends(require_roles("admin"))):
         "exam_mode":  camera.exam_mode,
         "face_count": len(faces),
         "batch":      bp,
-        "playback":   camera.playback_info,
         "faces": [
             {
                 "name":         f.get("name", "Unknown"),
@@ -1267,26 +1266,6 @@ async def camera_status(_=Depends(require_roles("admin"))):
             for f in faces
         ],
     }
-
-
-# ── Video playback controls ──────────────────────────────────────────────────
-
-@app.post("/api/camera/pause")
-async def camera_pause(_=Depends(require_roles("admin"))):
-    camera.pause()
-    return {"ok": True}
-
-
-@app.post("/api/camera/resume")
-async def camera_resume(_=Depends(require_roles("admin"))):
-    camera.resume()
-    return {"ok": True}
-
-
-@app.post("/api/camera/seek")
-async def camera_seek(seconds: float, _=Depends(require_roles("admin"))):
-    camera.seek(seconds)
-    return {"ok": True}
 
 
 # ── Exam mode ─────────────────────────────────────────────────────────────────

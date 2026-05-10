@@ -1510,7 +1510,6 @@ async function initMonitor() {
     renderFacePanel(s.faces);
     await pollAlerts();
     if (s.batch) updateBatchProgress(s.batch);
-    if (s.playback) _updatePlaybackUI(s.playback);
     if (!s.running && S.lastCamRunning) {
       document.getElementById('btnStartMon').style.display='inline-flex';
       document.getElementById('btnVideoFile').style.display='inline-flex';
@@ -1518,7 +1517,6 @@ async function initMonitor() {
       document.getElementById('btnStopMon').style.display='none';
       document.getElementById('btnUnlock').style.display='none';
       showBatchProgress(false);
-      _showPlaybackBar(false);
       updateCamPill(false);
       _setVideoSrc(false);
       if (S._wasBatch) {
@@ -1555,80 +1553,8 @@ async function stopMonCam() {
   S._wasBatch = false;
   updateCamPill(false);
   _setVideoSrc(false);
-  _showPlaybackBar(false);
   toast(t('cam_off'),'info');
 }
-
-// ── Video playback controls ─────────────────────────────────────────────────
-
-S._pbPaused = false;
-S._pbTotalSec = 0;
-S._pbCurrentSec = 0;
-
-function _fmtTime(sec) {
-  sec = Math.max(0, Math.round(sec));
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return m + ':' + String(s).padStart(2, '0');
-}
-
-function _showPlaybackBar(show) {
-  const bar = document.getElementById('videoPlaybackBar');
-  if (bar) bar.style.display = show ? 'flex' : 'none';
-}
-
-function _updatePlaybackUI(pb) {
-  if (!pb || !pb.file_mode) { _showPlaybackBar(false); return; }
-  _showPlaybackBar(true);
-  S._pbPaused = pb.paused;
-  S._pbTotalSec = pb.total_sec || 0;
-  S._pbCurrentSec = pb.current_sec || 0;
-  document.getElementById('pbTime').textContent =
-    _fmtTime(pb.current_sec) + ' / ' + _fmtTime(pb.total_sec);
-  const bar = document.getElementById('pbSeekBar');
-  if (bar && !bar._dragging) {
-    bar.max = pb.total_sec || 1;
-    bar.value = pb.current_sec || 0;
-  }
-  const iconPlay = document.getElementById('pbIconPlay');
-  const iconPause = document.getElementById('pbIconPause');
-  if (pb.paused) {
-    iconPlay.style.display = ''; iconPause.style.display = 'none';
-  } else {
-    iconPlay.style.display = 'none'; iconPause.style.display = '';
-  }
-}
-
-async function pbTogglePause() {
-  if (S._pbPaused) {
-    await api('POST', '/api/camera/resume').catch(() => {});
-  } else {
-    await api('POST', '/api/camera/pause').catch(() => {});
-  }
-}
-
-async function pbSeekRel(delta) {
-  const target = Math.max(0, Math.min(S._pbTotalSec, S._pbCurrentSec + delta));
-  await api('POST', '/api/camera/seek?seconds=' + target).catch(() => {});
-}
-
-async function pbSeekTo(val) {
-  const bar = document.getElementById('pbSeekBar');
-  if (bar) bar._dragging = true;
-  await api('POST', '/api/camera/seek?seconds=' + parseFloat(val)).catch(() => {});
-  setTimeout(() => { if (bar) bar._dragging = false; }, 500);
-}
-
-// Bind seekbar drag flag
-(function() {
-  const bar = document.getElementById('pbSeekBar');
-  if (bar) {
-    bar.addEventListener('mousedown', () => { bar._dragging = true; });
-    bar.addEventListener('mouseup', () => { setTimeout(() => { bar._dragging = false; }, 300); });
-    bar.addEventListener('touchstart', () => { bar._dragging = true; });
-    bar.addEventListener('touchend', () => { setTimeout(() => { bar._dragging = false; }, 300); });
-  }
-})();
 
 async function manualCaptureClip() {
   const btn = document.getElementById('btnManualClip');

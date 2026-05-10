@@ -344,12 +344,6 @@ class CameraProcessor:
         self._batch_total_frames = 0
         self._batch_start_time = 0.0
 
-        # File playback controls
-        self._paused = False
-        self._file_mode = False
-        self._file_fps = 25.0
-        self._file_total_frames = 0
-        self._seek_target: Optional[int] = None
 
     # ── Properties ───────────────────────────────────────────────────────────
 
@@ -387,39 +381,6 @@ class CameraProcessor:
             "elapsed_s":     round(elapsed, 1),
             "fps_actual":    round(fps_actual, 1),
         }
-
-    @property
-    def playback_info(self) -> dict:
-        if not self._file_mode:
-            return {"file_mode": False}
-        fps = self._file_fps
-        total = self._file_total_frames
-        current = self._frame_count
-        return {
-            "file_mode":    True,
-            "paused":       self._paused,
-            "current_sec":  round(current / fps, 1) if fps else 0,
-            "total_sec":    round(total / fps, 1) if fps else 0,
-            "current_frame": current,
-            "total_frames": total,
-            "percent":      round(current / total * 100, 1) if total > 0 else 0,
-            "fps":          round(fps, 1),
-        }
-
-    def pause(self):
-        if self._file_mode and self._running:
-            self._paused = True
-
-    def resume(self):
-        if self._file_mode and self._running:
-            self._paused = False
-
-    def seek(self, seconds: float):
-        if self._file_mode and self._running:
-            target_frame = max(0, int(seconds * self._file_fps))
-            target_frame = min(target_frame, self._file_total_frames)
-            self._seek_target = target_frame
-            self._paused = False
 
     @property
     def recognized_faces(self) -> list:
@@ -525,11 +486,6 @@ class CameraProcessor:
         self._frame_count = 0
         self._seat_attendance_fired.clear()
         self._batch_mode = batch
-        self._file_mode = True
-        self._paused = False
-        self._seek_target = None
-        self._file_fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
-        self._file_total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
         if batch:
             self._batch_total_frames = self._file_total_frames
             self._batch_start_time = time.time()
@@ -589,9 +545,7 @@ class CameraProcessor:
 
     def stop(self):
         self._running = False
-        self._paused = False
         self._batch_mode = False
-        self._file_mode = False
         self._batch_total_frames = 0
         self._batch_start_time = 0.0
         self._phone_face_indices.clear()
@@ -742,21 +696,6 @@ class CameraProcessor:
 
         try:
             while self._running:
-                if self._paused and not is_batch:
-                    time.sleep(0.1)
-                    start_wall = time.time() - self._frame_count / fps
-                    continue
-
-                if self._seek_target is not None:
-                    target = self._seek_target
-                    self._seek_target = None
-                    self._cap.set(cv2.CAP_PROP_POS_FRAMES, target)
-                    self._frame_count = target
-                    start_wall = time.time() - target / fps
-                    last_recog = 0.0
-                    with self._lock:
-                        self._face_name_map.clear()
-
                 t_iter = time.time()
 
                 frame = None
