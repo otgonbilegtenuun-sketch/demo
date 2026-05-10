@@ -666,8 +666,8 @@ class CameraProcessor:
                     annotated, faces = self._process_frame(frame.copy(), landmarker)
                 except Exception as e:
                     log.error(f"[camera] _process_frame error: {e}")
-                    time.sleep(0.05)
-                    continue
+                    annotated = frame
+                    faces = []
 
                 with self._lock:
                     self._frame     = annotated
@@ -805,9 +805,8 @@ class CameraProcessor:
                     annotated, faces = self._process_frame(frame.copy(), landmarker)
                 except Exception as e:
                     log.error(f"[camera] _process_frame error: {e}")
-                    if not is_batch:
-                        time.sleep(0.05)
-                    continue
+                    annotated = frame
+                    faces = []
 
                 with self._lock:
                     if not is_batch:

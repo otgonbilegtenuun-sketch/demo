@@ -1032,7 +1032,7 @@ async def video_feed(request: Request,
                         _ph = buf.tobytes()
                     data = _ph
                 else:
-                    _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                    _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 92])
                     data = buf.tobytes()
 
                 yield (
