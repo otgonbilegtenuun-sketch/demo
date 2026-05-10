@@ -809,6 +809,19 @@ async def _startup():
     db.init_db()
     log.info("[Mergen AI] Database ready")
 
+    # Quiet down noisy ConnectionResetError tracebacks from Windows asyncio
+    # proactor when WebSocket clients disconnect without a clean close frame.
+    def _quiet_exception_handler(loop, context):
+        exc = context.get("exception")
+        msg = context.get("message", "")
+        if isinstance(exc, ConnectionResetError) or "ConnectionResetError" in msg:
+            return  # known-benign client drop
+        loop.default_exception_handler(context)
+    try:
+        asyncio.get_running_loop().set_exception_handler(_quiet_exception_handler)
+    except Exception:
+        pass
+
     # Load persisted feature flags (overrides defaults baked into camera.py)
     for k in list(FEATURE_FLAGS.keys()):
         v = db.get_config(f"flag.{k}")
@@ -1243,6 +1256,7 @@ async def camera_status(_=Depends(require_roles("admin"))):
         "exam_mode":  camera.exam_mode,
         "face_count": len(faces),
         "batch":      bp,
+        "playback":   camera.playback_info,
         "faces": [
             {
                 "name":         f.get("name", "Unknown"),
@@ -1253,6 +1267,26 @@ async def camera_status(_=Depends(require_roles("admin"))):
             for f in faces
         ],
     }
+
+
+# ── Video playback controls ──────────────────────────────────────────────────
+
+@app.post("/api/camera/pause")
+async def camera_pause(_=Depends(require_roles("admin"))):
+    camera.pause()
+    return {"ok": True}
+
+
+@app.post("/api/camera/resume")
+async def camera_resume(_=Depends(require_roles("admin"))):
+    camera.resume()
+    return {"ok": True}
+
+
+@app.post("/api/camera/seek")
+async def camera_seek(seconds: float, _=Depends(require_roles("admin"))):
+    camera.seek(seconds)
+    return {"ok": True}
 
 
 # ── Exam mode ─────────────────────────────────────────────────────────────────

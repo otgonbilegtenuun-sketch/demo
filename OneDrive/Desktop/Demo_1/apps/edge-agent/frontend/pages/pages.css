@@ -150,6 +150,43 @@
 /* ── Monitor page ──────────────────────────────────────────────────────────── */
 .monitor-grid { display: grid; grid-template-columns: 1fr 290px; gap: 20px; align-items: start; }
 
+/* Playback controls */
+.playback-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--surface2, #F1F5F9);
+  border: 1px solid var(--border, #E2E8F0);
+  border-top: none;
+  border-radius: 0 0 var(--radius, 12px) var(--radius, 12px);
+}
+.pb-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border: none; border-radius: 6px;
+  background: transparent; color: var(--text2, #64748B); cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.pb-btn:hover { background: var(--border, #E2E8F0); color: var(--text, #1E293B); }
+.pb-play { width: 36px; height: 36px; background: var(--accent, #4F46E5); color: #fff !important; border-radius: 50%; }
+.pb-play:hover { background: var(--accent-hover, #4338CA); }
+.pb-time {
+  font-size: .78rem; color: var(--text2, #64748B); font-variant-numeric: tabular-nums;
+  min-width: 90px; text-align: center; white-space: nowrap;
+}
+.pb-seek {
+  flex: 1; height: 6px; -webkit-appearance: none; appearance: none;
+  background: var(--border, #E2E8F0); border-radius: 3px; outline: none; cursor: pointer;
+}
+.pb-seek::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--accent, #4F46E5); cursor: pointer;
+}
+.pb-seek::-moz-range-thumb {
+  width: 14px; height: 14px; border: none;
+  border-radius: 50%; background: var(--accent, #4F46E5); cursor: pointer;
+}
+
 .upload-progress-wrap {
   display: none;
   margin-top: 8px;

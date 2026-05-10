@@ -62,8 +62,6 @@ def _make_landmarker(num_faces: int = 30) -> _FaceLandmarker:
     return _FaceLandmarker.create_from_options(opts)
 
 
-# ── Lazy model loaders ────────────────────────────────────────────────────────
-
 _deepface_ready = False
 _deepface_lock  = threading.Lock()
 
@@ -91,6 +89,7 @@ _yolo_lock  = threading.Lock()
 # We use it to produce bboxes; MediaPipe FaceLandmarker still runs per crop for
 # gaze landmarks + blendshapes (distress signal). If YuNet load fails (offline,
 # disk full, etc) we silently fall back to whole-frame MediaPipe detection.
+
 
 _YUNET_MODEL_FNAME = "face_detection_yunet_2023mar.onnx"
 _YUNET_MODEL_URL = (
@@ -345,6 +344,13 @@ class CameraProcessor:
         self._batch_total_frames = 0
         self._batch_start_time = 0.0
 
+        # File playback controls
+        self._paused = False
+        self._file_mode = False
+        self._file_fps = 25.0
+        self._file_total_frames = 0
+        self._seek_target: Optional[int] = None
+
     # ── Properties ───────────────────────────────────────────────────────────
 
     @property
@@ -381,6 +387,39 @@ class CameraProcessor:
             "elapsed_s":     round(elapsed, 1),
             "fps_actual":    round(fps_actual, 1),
         }
+
+    @property
+    def playback_info(self) -> dict:
+        if not self._file_mode:
+            return {"file_mode": False}
+        fps = self._file_fps
+        total = self._file_total_frames
+        current = self._frame_count
+        return {
+            "file_mode":    True,
+            "paused":       self._paused,
+            "current_sec":  round(current / fps, 1) if fps else 0,
+            "total_sec":    round(total / fps, 1) if fps else 0,
+            "current_frame": current,
+            "total_frames": total,
+            "percent":      round(current / total * 100, 1) if total > 0 else 0,
+            "fps":          round(fps, 1),
+        }
+
+    def pause(self):
+        if self._file_mode and self._running:
+            self._paused = True
+
+    def resume(self):
+        if self._file_mode and self._running:
+            self._paused = False
+
+    def seek(self, seconds: float):
+        if self._file_mode and self._running:
+            target_frame = max(0, int(seconds * self._file_fps))
+            target_frame = min(target_frame, self._file_total_frames)
+            self._seek_target = target_frame
+            self._paused = False
 
     @property
     def recognized_faces(self) -> list:
@@ -486,8 +525,13 @@ class CameraProcessor:
         self._frame_count = 0
         self._seat_attendance_fired.clear()
         self._batch_mode = batch
+        self._file_mode = True
+        self._paused = False
+        self._seek_target = None
+        self._file_fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        self._file_total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
         if batch:
-            self._batch_total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
+            self._batch_total_frames = self._file_total_frames
             self._batch_start_time = time.time()
         else:
             self._batch_total_frames = 0
@@ -545,7 +589,9 @@ class CameraProcessor:
 
     def stop(self):
         self._running = False
+        self._paused = False
         self._batch_mode = False
+        self._file_mode = False
         self._batch_total_frames = 0
         self._batch_start_time = 0.0
         self._phone_face_indices.clear()
@@ -696,6 +742,21 @@ class CameraProcessor:
 
         try:
             while self._running:
+                if self._paused and not is_batch:
+                    time.sleep(0.1)
+                    start_wall = time.time() - self._frame_count / fps
+                    continue
+
+                if self._seek_target is not None:
+                    target = self._seek_target
+                    self._seek_target = None
+                    self._cap.set(cv2.CAP_PROP_POS_FRAMES, target)
+                    self._frame_count = target
+                    start_wall = time.time() - target / fps
+                    last_recog = 0.0
+                    with self._lock:
+                        self._face_name_map.clear()
+
                 t_iter = time.time()
 
                 frame = None
@@ -1827,7 +1888,11 @@ def process_enrollment_image(image_b64: str) -> Optional[np.ndarray]:
         return np.array(best["embedding"], dtype=np.float32)
 
     except Exception as e:
-        log.error(f"[camera] enroll image error: {e}")
+        msg = str(e)
+        if "Face could not be detected" in msg:
+            log.info("[camera] enroll: no face found in photo — ask user for a clearer, well-lit photo")
+        else:
+            log.error(f"[camera] enroll image error: {e}")
         return None
 
 
