@@ -56,13 +56,13 @@ const I18N = {
     nav_sections:'Хэсгүүд',
     nav_sec_home:'Нүүр хуудас', nav_sec_prob:'Яагаад хэрэгтэй вэ?',
     nav_sec_feat:'Боломжууд', nav_sec_about:'Бидний тухай', nav_sec_cta:'Эхлэх',
-    hero_stat2:'Ирц бүртгэлийн нарийвчлал', hero_stat3:'Нүүр таних хугацаа',
+    hero_stat2:'Дотоод боловсруулалт (Edge AI)', hero_stat3:'Үүлэнд илгээх түүхий видео',
     btn_logout:'Гарах', btn_login_nav:'Нэвтрэх',
     landing_badge:'Mergen AI — Ухаалаг сургалтын систем',
     landing_h1:'Та хэн болохоо сонгоно уу',
     landing_sub:'Таны үүрэгт тохирсон хяналт, мэдэгдэл болон аналитик',
     lp_h1_line1:'Ухаалаг ангийн', lp_h1_line2:'хяналтын систем',
-    lp_hero_sub:'AI-д суурилсан ирц бүртгэл, анхаарлын хяналт болон шалгалтын аюулгүй байдлын платформ — нэг дор',
+    lp_hero_sub:'Mergen AI нь ангийн камераар сурагчдын ирцийг нүүр таниулалтаар автоматаар бүртгэж, анхаарлын түвшинг бодит цагт хэмжээд, шалгалтын үед сэжигтэй үйлдлийг багшид сэрэмжлүүлдэг. Бүх дүрс боловсруулалт сургууль дотроо явагддаг тул хувийн мэдээлэл гадагш гардаггүй.',
     btn_signin:'Нэвтрэх', btn_register:'Бүртгүүлэх',
     lp_prob_h:'Яагаад хэрэгтэй вэ?', lp_prob_sub:'Монголын сургуулиуд өнөөдөр тулгарч буй бодит асуудлууд',
     lp_feat_h:'Боломжууд', lp_feat_sub:'Нэг платформ дээр бүгдийг шийддэг',
@@ -88,7 +88,7 @@ const I18N = {
     btn_signup:'Бүртгүүлэх', signup_has_acc:'Бүртгэл байна уу?', btn_login_link:'Нэвтрэх',
     about_sub:'Ухаалаг ангийн хяналтын систем',
     about_mission_h:'Бидний эрхэм зорилго',
-    about_mission_p:'Mergen AI нь сургуулийн анги танхимын хяналтыг хиймэл оюун ухааны технологиор дэмжиж, багш болон эцэг эхчүүдэд оюутнуудын ирц, анхаарал болон хандлагын талаарх бодит цагийн мэдээллийг хүргэдэг.',
+    about_mission_p:'Mergen AI нь ангийн камерын дүрсийг сургууль дотроо боловсруулж, нүүр таниулалтаар ирцийг автоматжуулж, анхаарлын түвшинг хэмжиж, шалгалт болон аюулгүй байдлын сэжигтэй нөхцөлийг багшид сэрэмжлүүлдэг. AI нь зөвхөн хянаж үзэх дохио өгдөг бөгөөд эцсийн шийдвэрийг үргэлж багш гаргадаг. Түүхий видео сургуулийн дотор хадгалагдаж, гадагш гардаггүй.',
     about_features_h:'Үндсэн боломжууд',
     about_f1:'Нүүр таних технологиор оюутны ирцийг автоматаар бүртгэх',
     about_f2:'Анхаарлын түвшинг бодит цагт хянах',
@@ -96,7 +96,9 @@ const I18N = {
     about_f4:'Дүрэмт хувцасны мөрдөлтийг шалгах',
     about_f5:'Эцэг эхэд хүүхдийнхээ мэдээллийг шуурхай хүргэх',
     about_team_h:'Баг',
-    about_team_p:'Mergen AI-г Монголын залуу инженер, боловсролын мэргэжилтнүүдийн баг хөгжүүлж байна.',
+    about_team_p:'Mergen AI-г гурван хүний жижиг баг бүтээж байна — инженерчлэл, бүтээгдэхүүний дизайн, боловсролын чиглэлээр. Бид технологийг боловсролын чанарыг сайжруулахад ашиглахыг зорьдог.',
+    team_role1:'Үүсгэн байгуулагч · Инженер', team_role2:'Бүтээгдэхүүн · Дизайн', team_role3:'Боловсрол · Судалгаа',
+    team_bio_ph:'Танилцуулга удахгүй нэмэгдэнэ.',
     role_lbl_teacher:'Багш', role_lbl_parent:'Эцэг эх', role_lbl_admin:'Удирдлага',
     students_h1:'Оюутны бүртгэл',
     students_sub:'Бүртгэлтэй оюутнуудын жагсаалт, нүүрний мэдээлэл, удирдлага',
@@ -224,7 +226,7 @@ const I18N = {
     inc_disclaimer:'This system surfaces spatial and affective patterns for human review. No flag confirms actual bullying — staff must watch the clip and decide.',
     inc_f_pending:'Pending', inc_f_all:'All',
     nav_seats:'Seats', nav_admin_cfg:'Settings',
-    seats_h1:'Classroom seat map', seats_sub:'Snap a frame from the camera, mark seats and assign students. Identity becomes a lookup.',
+    seats_h1:'Classroom Seat Map', seats_sub:'Snap a frame from the camera, mark seats and assign students. Identity becomes a lookup.',
     seats_snap:'Refresh snapshot', seats_clear:'Clear all', seats_save:'Save',
     seats_help_t:'How to:', seats_help:'Drag a rectangle on the image, then pick a student. Click a rectangle to delete it.',
     seats_list:'Seats', seats_none:'No seats yet',
@@ -257,21 +259,21 @@ const I18N = {
     eval_run_btn:'Run evaluation',
     eval_clips_t:'Clips',
     eval_results_t:'Latest results',
-    eval_no_results:'Never run yet',
+    eval_no_results:'No evaluations yet',
     nav_teacher:'Teacher', nav_teacher_dash:'Dashboard', nav_parent:'Parent', nav_admin:'Admin',
     nav_about:'About',
     nav_sections:'Sections',
     nav_sec_home:'Home', nav_sec_prob:'Why it matters',
     nav_sec_feat:'Features', nav_sec_about:'About us', nav_sec_cta:'Get started',
-    hero_stat2:'Attendance accuracy', hero_stat3:'Face recognition speed',
+    hero_stat2:'On-device processing (Edge AI)', hero_stat3:'Raw video sent to cloud',
     btn_logout:'Sign out', btn_login_nav:'Sign in',
     landing_badge:'Mergen AI — Smart Classroom System',
     landing_h1:'Choose your role',
     landing_sub:'Monitoring, alerts, and analytics tailored for you',
     lp_h1_line1:'Smart Classroom', lp_h1_line2:'Monitoring System',
-    lp_hero_sub:'AI-powered attendance, attention monitoring & exam security platform — all in one',
+    lp_hero_sub:'Mergen AI uses your classroom camera to log attendance automatically with face recognition, track student attention in real time, and alert the teacher to suspicious activity during exams. All video is processed inside the school, so student data never leaves the building.',
     btn_signin:'Sign in', btn_register:'Sign up',
-    lp_prob_h:'Why is it needed?', lp_prob_sub:'Real challenges faced by schools today',
+    lp_prob_h:'Why it matters', lp_prob_sub:'Real challenges schools face today',
     lp_feat_h:'Features', lp_feat_sub:'Everything you need in one platform',
     cap1_h:'Face ID Attendance', cap2_h:'Attention Monitoring', cap3_h:'Exam Security',
     cap4_h:'Multi-role Dashboards', cap5_h:'Edge AI', cap6_h:'Uniform Compliance',
@@ -295,7 +297,7 @@ const I18N = {
     btn_signup:'Sign up', signup_has_acc:'Already have an account?', btn_login_link:'Sign in',
     about_sub:'Smart classroom monitoring system',
     about_mission_h:'Our mission',
-    about_mission_p:'Mergen AI uses AI and camera vision to monitor classrooms in real time, providing teachers and parents with live data on attendance, attention, and student behavior.',
+    about_mission_p:'Mergen AI processes classroom camera video on-site at the school: it automates attendance with face recognition, measures attention levels, and alerts teachers to suspicious exam or safety situations. The AI only raises review prompts — the final decision always rests with a teacher. Raw video stays inside the school and never leaves.',
     about_features_h:'Features',
     about_f1:'Automated attendance via face recognition',
     about_f2:'Real-time attention level tracking',
@@ -303,7 +305,9 @@ const I18N = {
     about_f4:'Uniform compliance checking',
     about_f5:"Instant alerts to parents about their child's status",
     about_team_h:'Team',
-    about_team_p:'Mergen AI is built by a team of Mongolian engineers and education specialists.',
+    about_team_p:'Mergen AI is built by a small, three-person team spanning engineering, product design, and education. We build technology to improve the quality of schooling.',
+    team_role1:'Founder · Engineering', team_role2:'Product · Design', team_role3:'Education · Research',
+    team_bio_ph:'Bio coming soon.',
     role_lbl_teacher:'Teacher', role_lbl_parent:'Parent', role_lbl_admin:'Admin',
     students_h1:'Student Management',
     students_sub:'All enrolled students, face registration status, and management',
@@ -330,13 +334,13 @@ const I18N = {
     getting_started:'Getting started',
     btn_new_student:'Enroll New Student', btn_live_mon:'Live Monitor',
     about_h:'About Us', about_sub:'What is Mergen AI? Why does Mongolia need it?',
-    about_p1:'Mergen AI uses computer vision and AI to monitor classroom activity in real time, giving teachers and parents instant insight into attendance, attention, and exam behaviour.',
+    about_p1:'Mergen AI uses computer vision and AI to monitor classroom activity in real time, giving teachers and parents instant insight into attendance, attention, and exam behavior.',
     about_p2:'Launching in private schools across Ulaanbaatar — a market of 600+ private schools growing 12% annually where AI EdTech penetration is virtually zero.',
     prob1_h:'Wasted class time', prob1_p:'Manual roll call consumes 10–15 min per period → 200+ hours of instruction lost per school per year',
     prob2_h:'Exam cheating', prob2_p:'60%+ of students in Asian secondary schools admit to some form of cheating in exams',
     prob3_h:'No attention data', prob3_p:'Teachers have no objective tool to measure engagement across 30+ students simultaneously',
     market_title:'Market Opportunity',
-    mstat1:'Private schools in Mongolia', mstat2:'Annual enrolment growth', mstat3:'Global EdTech AI market by 2030', mstat4:'CAGR growth rate',
+    mstat1:'Private schools in Mongolia', mstat2:'Annual enrollment growth', mstat3:'Global EdTech AI market by 2030', mstat4:'CAGR growth rate',
     enroll_h1:'Enroll Student',
     enroll_sub:'Capture 3 photos to register a face embedding. Good lighting = better recognition.',
     cam_preview:'Camera preview', cam_hint:'Click "Start Camera" below',
@@ -352,7 +356,7 @@ const I18N = {
     cap2:'Measures student attention and generates real-time scores',
     cap3:'Detects phone use and suspicious movement in exam mode',
     cap4:'Separate dashboards and alerts for teachers, parents and admins',
-    cap5:'Works offline without internet connection (Edge AI)',
+    cap5:'Works offline — no internet required (Edge AI)',
     cam_off:'Off', cam_on:'Running',
     btn_start_mon:'Start Camera', btn_stop:'Stop',
     monitor_tip:'Tip: Close the Enroll camera before starting monitor. In exam mode, looking down is flagged as potential phone use.',
@@ -405,7 +409,7 @@ const I18N = {
     uniform_no:'✗ Not Wearing', uniform_unk:'Not Checked',
     status_att:'Attentive', status_dist:'Distracted', status_susp:'Suspicious',
     status_down:'Looking down',
-    enroll_ok:'enrolled successfully! photos processed.',
+    enroll_ok:'enrolled successfully — photos processed',
     enroll_fail:'No face detected. Try in better lighting.',
     no_student:'No students enrolled',
     err_fill:'Please fill in all fields',
@@ -958,7 +962,7 @@ async function api(method, url, body) {
 // ── Toast ────────────────────────────────────────────────────────────────────
 function toast(msg, type='info') {
   const el = document.getElementById('toast');
-  const colors = { info:'#15803D', success:'#059669', error:'#DC2626', warning:'#D97706' };
+  const colors = { info:'#B87333', success:'#9A7B1E', error:'#DC2626', warning:'#D97706' };
   el.style.borderLeft = `3px solid ${colors[type]||colors.info}`;
   el.innerHTML = `<svg class="icon" style="color:${colors[type]||colors.info}"><use href="#i-bell"/></svg> ${esc(msg)}`;
   el.classList.add('show');
@@ -1766,12 +1770,12 @@ function updateChart(hist) {
         datasets:[{
           label:t('stat_avg_att'),
           data,
-          borderColor:'#15803D',
-          backgroundColor:'rgba(21,128,61,.08)',
+          borderColor:'#B87333',
+          backgroundColor:'rgba(184,115,51,.10)',
           fill:true,
           tension:0.45,
           pointRadius:4,
-          pointBackgroundColor:'#15803D',
+          pointBackgroundColor:'#B87333',
           pointBorderColor:'#fff',
           pointBorderWidth:2,
         }]
@@ -1788,7 +1792,7 @@ function updateChart(hist) {
         plugins:{
           legend:{labels:{color:'#374151',boxWidth:12,usePointStyle:true}},
           tooltip:{
-            backgroundColor:'#15803D',
+            backgroundColor:'#B87333',
             callbacks:{label:ctx=>' '+ctx.parsed.y+'%'}
           }
         }
@@ -2218,7 +2222,7 @@ function renderIncidentCard(inc) {
                 onclick="reviewIncident(${Number(inc.id)},'confirmed')">
           ${S.lang==='mn'?'Батлах':'Confirm'}
         </button>
-        <button class="btn btn-sm" style="background:#ECFDF5;color:var(--success);border:1px solid #A7F3D0"
+        <button class="btn btn-sm" style="background:#FBF3E8;color:var(--success);border:1px solid #E8D5BC"
                 onclick="reviewIncident(${Number(inc.id)},'false_positive')">
           ${S.lang==='mn'?'Худал дохио':'False positive'}
         </button>
@@ -2392,8 +2396,8 @@ function drawSeats() {
     const [dx1, dy1] = camToDisplay(s.x1, s.y1);
     const [dx2, dy2] = camToDisplay(s.x2, s.y2);
     ctx.lineWidth = 2;
-    ctx.strokeStyle = s.student_id ? '#10B981' : '#F59E0B';
-    ctx.fillStyle   = s.student_id ? 'rgba(16,185,129,.15)' : 'rgba(245,158,11,.15)';
+    ctx.strokeStyle = s.student_id ? '#B87333' : '#F59E0B';
+    ctx.fillStyle   = s.student_id ? 'rgba(184,115,51,.15)' : 'rgba(245,158,11,.15)';
     ctx.fillRect(dx1, dy1, dx2 - dx1, dy2 - dy1);
     ctx.strokeRect(dx1, dy1, dx2 - dx1, dy2 - dy1);
     const label = (i + 1) + (s.student_name ? ' - ' + s.student_name : '');
@@ -2914,7 +2918,7 @@ async function refreshAdminDashboard() {
   }
   const classNames = Object.keys(byClass).sort();
   const classAvgs  = classNames.map(c => byClass[c].n ? Math.round(byClass[c].sum / byClass[c].n) : 0);
-  const classColors = classAvgs.map(v => v >= 75 ? '#047857' : v >= 55 ? '#D97706' : '#DC2626');
+  const classColors = classAvgs.map(v => v >= 75 ? '#B87333' : v >= 55 ? '#D97706' : '#DC2626');
   const ccCtx = document.getElementById('adClassChart');
   if (ccCtx) {
     if (_adClassChart) {

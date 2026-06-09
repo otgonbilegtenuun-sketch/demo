@@ -1,10 +1,10 @@
 """
-camera.py — OpenCV + MediaPipe (gaze) + InsightFace (recognition) + YOLOv8 (phone)
+camera.py — OpenCV + MediaPipe (gaze) + DeepFace ArcFace (recognition) + YOLOv8 (phone)
 
-Architecture:
+Architecture (live loop paces to ~15 fps):
   MediaPipe Face Landmarker  : face detection every frame, gaze analysis (attentive / sideways)
-  InsightFace buffalo_sc     : 512-dim face embedding for recognition (every 2 s)
-  YOLOv8 nano                : phone / object detection (every ~15 frames, exam mode only)
+  DeepFace ArcFace           : 512-dim face embedding for recognition (every 3 s)
+  YOLOv8 nano                : phone / object detection (every 30 frames, exam mode only)
 """
 
 import base64
@@ -255,8 +255,9 @@ class CameraProcessor:
         # YOLO phone detection: set of face indices where a phone was found
         self._phone_face_indices: set = set()
         self._last_phone_alert: float = 0.0
-        # Bumped from 15 → 30: phone alerts every 8 s already; halving inference
-        # cost is worth the half-second extra latency on detection.
+        # Bumped from 15 → 30: at the ~15 fps loop that's a phone-detection pass
+        # every ~2 s, which is plenty; halving inference cost is worth the small
+        # extra detection latency.
         self._YOLO_INTERVAL = 30
 
         # YOLO person tracking
@@ -282,18 +283,18 @@ class CameraProcessor:
         # Bullying / incident flagger — wires to YOLO tracks + blendshape distress
         self._bullying = BullyingDetector()
         self._bullying.on_incident = self._emit_bullying_event
-        self._BULLYING_INTERVAL = 6   # evaluate every N frames (~5 Hz at 30 fps)
+        self._BULLYING_INTERVAL = 6   # evaluate every N frames (~2.5 Hz at 15 fps loop)
 
         self._safety = SafetyDetector()
         self._safety.on_incident = self._emit_safety_event
-        self._SAFETY_INTERVAL = 6
-        self._SAFETY_OBJECT_INTERVAL = 90
+        self._SAFETY_INTERVAL = 6           # cheap heuristics; offset from bullying tick
+        self._SAFETY_OBJECT_INTERVAL = 90   # YOLO objects; phase-offset to avoid load spikes
         self._safety_objects: list = []
         self._read_fail_count = 0
 
-        # JPEG ring buffer for incident clip extraction. Sampled at ~6 fps
-        # (every 5th frame) to keep encode cost off the critical path.
-        # 180 frames × 5 fps stride × ~3 fps real loop ≈ 30 s of replay.
+        # JPEG ring buffer for incident clip extraction. Sampled 1-in-5 frames
+        # to keep encode cost off the critical path. At the ~15 fps loop that is
+        # ~3 stored fps; 180 frames ≈ 60 s of replay.
         self._clip_buffer: deque = deque(maxlen=180)
         self._clip_lock = threading.Lock()
         self._CLIP_SAMPLE_EVERY = 5     # encode 1-in-N frames
@@ -323,7 +324,7 @@ class CameraProcessor:
         self._pose_analyzer: Optional[PoseAnalyzer] = None
         self._pose_per_track: dict = {}      # track_id -> features dict (or None)
         self._pose_last_seen: dict = {}      # track_id -> ts of last successful pose
-        self._POSE_INTERVAL = 12             # ~1.25 Hz at 15 fps loop rate
+        self._POSE_INTERVAL = 12             # ~1.25 Hz at the 15 fps loop rate
 
         # Seat map — list of {id, student_id, student_name, x1, y1, x2, y2}
         self._seats: list = []
@@ -336,7 +337,7 @@ class CameraProcessor:
 
         # Top-view appearance re-identification
         self._appearance = AppearanceTracker()
-        self._APPEARANCE_INTERVAL = 90    # re-ID every N frames (~6s at 15 fps)
+        self._APPEARANCE_INTERVAL = 90    # re-ID every N frames (~6s at 15 fps); phase-offset
         self._appearance_last_frame: np.ndarray = None  # cached for calibration
 
         # Batch (offline) video processing — no real-time constraint
@@ -487,7 +488,7 @@ class CameraProcessor:
         self._seat_attendance_fired.clear()
         self._batch_mode = batch
         if batch:
-            self._batch_total_frames = self._file_total_frames
+            self._batch_total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
             self._batch_start_time = time.time()
         else:
             self._batch_total_frames = 0
@@ -581,8 +582,10 @@ class CameraProcessor:
                 t_iter = time.time()
 
                 # Person tracking — frequency depends on what needs it.
-                # Exam / locked-person UI need responsive tracking (every 20 frames).
-                # Bullying detector only consumes it at ~5 Hz so 1-in-60 is enough.
+                # Exam / locked-person / seat UI need responsive tracking (every 15
+                # frames); background bullying only samples it, so 1-in-30 is enough.
+                # This stays on the `% interval == 0` tick; the other heavy ops below
+                # are phase-offset off this tick so they don't pile onto one frame.
                 _foreground = self._exam_mode or self._locked_id is not None
                 _interval = (self._PERSON_TRACK_INTERVAL
                              if (_foreground or self._seats)
@@ -597,9 +600,12 @@ class CameraProcessor:
                     except Exception as e:
                         log.error(f"[camera] person track error: {e}")
 
-                # Appearance re-ID for ceiling cameras
+                # Appearance re-ID for ceiling cameras.
+                # Fire at remainder 75: not a multiple of 30, so it never shares a
+                # frame with background person tracking (% 30 == 0) or with the
+                # safety-object YOLO pass (% 90 == 45) — see load-spread note above.
                 if (FEATURE_FLAGS.get("ceiling_mode")
-                        and self._frame_count % self._APPEARANCE_INTERVAL == 0
+                        and self._frame_count % self._APPEARANCE_INTERVAL == 75
                         and self._tracked_persons):
                     try:
                         self._run_appearance_matching(frame)
@@ -646,20 +652,24 @@ class CameraProcessor:
                     except Exception as e:
                         log.error(f"[camera] YOLO phone error: {e}")
 
+                # Safety object YOLO — fire at remainder 45 (not a multiple of 30)
+                # so this heavy pass never lands on a background person-tracking frame.
                 if (FEATURE_FLAGS.get("safety_monitor")
                         and FEATURE_FLAGS.get("object_safety_detect")
-                        and self._frame_count % self._SAFETY_OBJECT_INTERVAL == 0):
+                        and self._frame_count % self._SAFETY_OBJECT_INTERVAL == 45):
                     self._update_safety_objects(frame)
 
+                # Safety heuristics — offset by 3 so this cheap pass interleaves
+                # with the bullying pass (% 6 == 0) instead of doubling up on it.
                 if (FEATURE_FLAGS.get("safety_monitor")
-                        and self._frame_count % self._SAFETY_INTERVAL == 0):
+                        and self._frame_count % self._SAFETY_INTERVAL == 3):
                     self._run_safety_detector(frame, now)
 
                 # Bullying / incident flagger (gated to non-exam inside)
                 if self._frame_count % self._BULLYING_INTERVAL == 0:
                     self._run_bullying_detector(faces, now)
 
-                # InsightFace recognition
+                # DeepFace ArcFace recognition
                 if (now - last_recog) >= recog_interval and faces:
                     try:
                         self._handle_recognition(frame, faces, now)
@@ -725,7 +735,7 @@ class CameraProcessor:
                             log.error(f"[camera] person track error: {e}")
 
                     if (FEATURE_FLAGS.get("ceiling_mode")
-                            and self._frame_count % self._APPEARANCE_INTERVAL == 0
+                            and self._frame_count % self._APPEARANCE_INTERVAL == 75
                             and self._tracked_persons):
                         try:
                             self._run_appearance_matching(frame)
@@ -772,11 +782,11 @@ class CameraProcessor:
 
                     if (FEATURE_FLAGS.get("safety_monitor")
                             and FEATURE_FLAGS.get("object_safety_detect")
-                            and self._frame_count % self._SAFETY_OBJECT_INTERVAL == 0):
+                            and self._frame_count % self._SAFETY_OBJECT_INTERVAL == 45):
                         self._update_safety_objects(frame)
 
                     if (FEATURE_FLAGS.get("safety_monitor")
-                            and self._frame_count % self._SAFETY_INTERVAL == 0):
+                            and self._frame_count % self._SAFETY_INTERVAL == 3):
                         self._run_safety_detector(frame, now)
 
                     if self._frame_count % self._BULLYING_INTERVAL == 0:

@@ -17,16 +17,22 @@ Starts the FastAPI server with uvicorn auto-reload. Entry point: `apps/edge-agen
 pip install -r apps/edge-agent/requirements.txt
 ```
 
-All runtime deps (`deepface`, `ultralytics`, `mediapipe`, etc.) are in the requirements file.
+Root `requirements.txt` just delegates to the above. All runtime deps (`deepface`, `ultralytics`, `mediapipe`, etc.) are in the edge-agent requirements file.
 
 ## Validation before push
 
-```bash
-python -c "import ast; files=['apps/edge-agent/backend/app.py','apps/edge-agent/backend/camera.py','apps/edge-agent/backend/database.py','apps/edge-agent/backend/bullying_detector.py','apps/edge-agent/backend/pose_analyzer.py','apps/edge-agent/backend/safety_detector.py','apps/edge-agent/eval/run_eval.py']; [ast.parse(open(f, encoding='utf-8').read()) for f in files]; print('py OK')"
-node -e "new Function(require('fs').readFileSync('apps/edge-agent/frontend/app.js','utf8')); console.log('js OK')"
-```
+Run all three checks. Push only after all pass and the user explicitly asks.
 
-Push only after validation passes and the user explicitly asks.
+```bash
+# 1. Python syntax check
+python -c "import ast; files=['apps/edge-agent/backend/app.py','apps/edge-agent/backend/camera.py','apps/edge-agent/backend/database.py','apps/edge-agent/backend/bullying_detector.py','apps/edge-agent/backend/pose_analyzer.py','apps/edge-agent/backend/safety_detector.py','apps/edge-agent/eval/run_eval.py']; [ast.parse(open(f, encoding='utf-8').read()) for f in files]; print('py OK')"
+
+# 2. JS syntax check
+node -e "new Function(require('fs').readFileSync('apps/edge-agent/frontend/app.js','utf8')); console.log('js OK')"
+
+# 3. Frontend smoke check (duplicate IDs, missing i18n keys, security invariants)
+node apps/edge-agent/frontend/smoke-check.js
+```
 
 ## Demo accounts
 
@@ -37,6 +43,20 @@ Seeded automatically on first run:
 | `admin`    | `admin123`   | admin   |
 | `teacher1` | `teacher123` | teacher |
 | `parent1`  | `parent123`  | parent  |
+
+## Testing
+
+**Integration test** (requires running server + webcam + enrolled student):
+```bash
+python apps/edge-agent/test_scenario.py
+```
+Records webcam video, configures seats, uploads in batch mode, checks attendance results.
+
+**Eval suite** (bullying/behavior detector accuracy on labeled clips):
+```bash
+python apps/edge-agent/eval/run_eval.py
+```
+Reads `apps/edge-agent/eval/labels.csv` and clips in `apps/edge-agent/eval/clips/`. Outputs per-clip results and precision/recall.
 
 ## Product scope
 
@@ -52,7 +72,7 @@ Single-page application. All page routes (`/`, `/monitor`, `/dashboard/teacher`,
 
 ### Backend (`apps/edge-agent/backend/`)
 
-- **`app.py`** — FastAPI app. Mounts frontend as `/static`, photos/clips as static assets. All API routes. Auth uses custom HMAC-signed token (7-day expiry), not a JWT library. Camera callbacks wired here to decouple camera logic from DB writes.
+- **`app.py`** — FastAPI app. Mounts frontend as `/static`; photos/clips served via authenticated routes (not public static mounts). All API routes. Auth uses custom HMAC-signed token (7-day expiry), not a JWT library. HMAC secret loaded from `$MERGEN_SECRET` env or auto-generated `.secret` file. Rate limiting: 8 failed logins per 15min window per IP+user. Camera callbacks wired here to decouple camera logic from DB writes.
 - **`camera.py`** — `CameraProcessor` runs in a background thread. AI models at different cadences:
   - **MediaPipe Face Landmarker** (`face_landmarker.task`) — every frame; face bboxes + gaze (attentive/sideways)
   - **YuNet** (`face_detection_yunet_2023mar.onnx`) — optional better face detector for small/profile faces; auto-downloaded
@@ -69,7 +89,8 @@ Single-page application. All page routes (`/`, `/monitor`, `/dashboard/teacher`,
 ### Frontend (`apps/edge-agent/frontend/`)
 
 - **`index.html`** — All page `<div>` elements (hidden by default) + inline SVG sprite.
-- **`app.js`** — All JS in one file. Global state in object `S`. i18n: Mongolian (`mn`) and English (`en`). `showPage(path)` activates the correct div + calls its `init*()` function.
+- **`app.js`** — All JS in one file. Global state in object `S`. i18n via `I18N` dict with Mongolian (`mn`) and English (`en`); HTML elements use `data-i18n` attributes. `showPage(path)` activates the correct div + calls its `init*()` function. Media URLs go through `authMediaUrl()` helper to attach auth tokens.
+- **`smoke-check.js`** — Node script that validates: no duplicate HTML IDs, all `data-i18n` keys exist in JS dict, security invariants (auth on media routes, WebSocket token, no public media mounts). Run as `node apps/edge-agent/frontend/smoke-check.js`.
 - **`style.css`**, `nav/nav.css`, `pages/pages.css`, `hero/hero.css`, `layout/layout.css` — CSS split by concern.
 
 ### Key data flows
@@ -100,12 +121,13 @@ Recognition uses `ssd` → `skip` backend fallback on pre-cropped face regions. 
 - Commit source files only. Never commit `classroom.db`, generated clips, photos, uploads, model files (`.onnx`, `.pt`), or eval video clips.
 - `.gitignore` covers `*.db`, `photos/`, `uploads/`, `clips/`, `__pycache__/`, model files.
 
+## Important conventions
+
+- **Edge-first**: raw video never leaves the school by default. Only metadata goes to cloud. This is an architectural invariant, not a preference.
+- **i18n**: every user-visible string in the frontend must exist in both `mn` and `en` entries of the `I18N` dict in `app.js`, with a matching `data-i18n` attribute in `index.html`. The smoke check enforces this.
+- **Media security**: photos, clips, and eval clips are served through authenticated FastAPI routes (`@app.get("/photos/...")`), not via `app.mount()` static directories. The smoke check enforces this.
+- **WebSocket events**: `/ws/events` streams real-time alerts/attendance to the frontend. Token is passed as `?token=` query param, not in headers (browsers don't support auth headers on WebSocket).
+
 ## Hardware targets
 
-| Tier | CPU | GPU | RAM | Capacity |
-|------|-----|-----|-----|----------|
-| Minimum | i5-12th gen / Ryzen 5 5600 | None (CPU only) | 16GB | 1 camera, ~2-3 AI FPS |
-| Recommended | i5-13400 / Ryzen 5 7600 | RTX 3060 12GB | 32GB | 1-3 cameras, real-time |
-| Comfortable | i7-13700 / Ryzen 7 7700 | RTX 4070 | 32-64GB | 8-12 cameras |
-
-Primary bottleneck is GPU inference (YOLO, ArcFace). Without GPU, all AI runs on CPU — expect slower processing. Camera AI streams should be 640x360 or 720p at 3-5 FPS, not full 1080p/4K.
+Primary bottleneck is GPU inference (YOLO, ArcFace). Without GPU, all AI runs on CPU — expect slower processing. Minimum: i5-12th gen, 16GB RAM, CPU-only (1 camera, ~2-3 AI FPS). Recommended: i5-13400+, RTX 3060+, 32GB RAM. Camera AI streams should be 640x360 or 720p at 3-5 FPS, not full 1080p/4K.

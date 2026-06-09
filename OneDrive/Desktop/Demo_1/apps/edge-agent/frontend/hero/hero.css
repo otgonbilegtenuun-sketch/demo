@@ -189,3 +189,33 @@
 .lp-footer a:hover { color: #fff; }
 .lp-footer-links { display: flex; gap: 20px; flex-wrap: wrap; }
 .lp-footer-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; color: #fff; }
+
+/* ── Landing team cards (dark section) ─────────────────────────────────────── */
+.lp-team-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 14px; max-width: 620px; margin: 0 auto;
+}
+.lp-team-card {
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 14px; padding: 18px 14px; text-align: center;
+  transition: transform .2s cubic-bezier(.34,1.56,.64,1), background .2s, border-color .2s;
+}
+.lp-team-card:hover {
+  transform: translateY(-3px);
+  background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.28);
+}
+.lp-team-avatar {
+  width: 44px; height: 44px; margin: 0 auto 10px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent, #B87333), #8B5520);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 12px rgba(184,115,51,.30);
+}
+.lp-team-avatar svg { width: 20px; height: 20px; color: #fff; fill: none; stroke: currentColor; stroke-width: 2; }
+.lp-team-name { font-size: .9rem; font-weight: 700; color: #fff; letter-spacing: -.01em; }
+.lp-team-role {
+  font-size: .66rem; font-weight: 600; color: #E8C88A;
+  text-transform: uppercase; letter-spacing: .04em; margin-top: 3px;
+}
+.lp-team-bio { font-size: .76rem; color: rgba(255,255,255,.55); line-height: 1.5; margin-top: 7px; }
+@media (max-width: 640px) { .lp-team-grid { grid-template-columns: 1fr; max-width: 320px; } }

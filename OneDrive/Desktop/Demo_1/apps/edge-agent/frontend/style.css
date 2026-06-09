@@ -14,7 +14,7 @@
   --accent-dk: #8B5520;
   --accent2:   #C9A227;
   --accent-lt: rgba(184,115,51,.10);
-  --success:   #047857;  --success-lt: #D1FAE5;
+  --success:   #9A7B1E;  --success-lt: #F7ECC9;
   --warning:   #D97706;  --warning-lt: #FEF3C7;
   --danger:    #DC2626;  --danger-lt:  #FEE2E2;
   --radius:    12px;
@@ -89,7 +89,7 @@ button:active, .btn:active { transform: scale(.96) !important; }
 .btn-danger    { background: var(--danger); color: #fff; }
 .btn-danger:hover { background: #b91c1c; }
 .btn-success   { background: var(--success); color: #fff; }
-.btn-success:hover { background: #047857; }
+.btn-success:hover { background: #7A5E14; }
 .btn-warning   { background: var(--warning); color: #fff; }
 .btn-warning:hover { background: #B45309; }
 .btn-sm    { padding: 5px 11px; font-size: .8rem; }
@@ -191,7 +191,7 @@ tbody tr:nth-child(n+9){ animation-delay:.27s; }
 
 /* ── Badges ────────────────────────────────────────────────────────────────── */
 .badge { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:999px; font-size:.74rem; font-weight:700; animation: badgePop .3s cubic-bezier(.34,1.56,.64,1) both; }
-.badge-green  { background:#D1FAE5; color:#065F46; }
+.badge-green  { background:#F7ECC9; color:#8B5520; }
 .badge-yellow { background:#FEF3C7; color:#92400E; }
 .badge-red    { background:#FEE2E2; color:#991B1B; }
 .badge-blue   { background:#FEF0DC; color:#B87333; }
@@ -237,7 +237,7 @@ tbody tr:nth-child(n+9){ animation-delay:.27s; }
   padding:3px 9px; border-radius:999px;
   font-size:.72rem; font-weight:700; white-space:nowrap;
 }
-.uniform-yes { background:#D1FAE5; color:var(--success); }
+.uniform-yes { background:#F7ECC9; color:var(--success); }
 .uniform-no  { background:#FEE2E2; color:var(--danger); }
 .uniform-unk { background:var(--surface2); color:var(--muted); }
 
@@ -249,7 +249,7 @@ tbody tr:nth-child(n+9){ animation-delay:.27s; }
   background:#FEE2E2; color:var(--danger);
   transition: background .3s, color .3s;
 }
-.cam-pill.on { background:#D1FAE5; color:var(--success); }
+.cam-pill.on { background:#F7ECC9; color:var(--success); }
 .cam-pill-dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
 
 /* ── Toast ─────────────────────────────────────────────────────────────────── */
@@ -397,7 +397,7 @@ kbd { background:var(--surface2); border:1px solid var(--border); padding:2px 6p
   font-size: .70rem; font-weight: 700;
   letter-spacing: .01em; white-space: nowrap;
 }
-.badge-green  { background: var(--success-lt); color: #065F46; }
+.badge-green  { background: var(--success-lt); color: #8B5520; }
 .badge-yellow { background: var(--warning-lt); color: #92400E; }
 .badge-red    { background: var(--danger-lt);  color: #991B1B; }
 .badge-gray   { background: #F1F5F9;           color: #475569; }
@@ -407,12 +407,12 @@ kbd { background:var(--surface2); border:1px solid var(--border); padding:2px 6p
 .live-pill {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 11px; border-radius: 999px;
-  background: var(--success-lt); color: #065F46;
+  background: var(--success-lt); color: #8B5520;
   font-size: .72rem; font-weight: 700;
 }
 .live-pill::before {
   content: ''; width: 7px; height: 7px; border-radius: 50%;
-  background: #059669; animation: live-pulse 1.6s ease-in-out infinite;
+  background: #B87333; animation: live-pulse 1.6s ease-in-out infinite;
 }
 @keyframes live-pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
 

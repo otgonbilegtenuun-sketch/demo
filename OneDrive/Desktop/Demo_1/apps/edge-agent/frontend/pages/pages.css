@@ -144,7 +144,7 @@
   transition: border-color .15s, box-shadow .15s;
   outline: none;
 }
-.form-control:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(21,128,61,.12); }
+.form-control:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(184,115,51,.12); }
 .form-control option { background: var(--surface); }
 
 /* ── Monitor page ──────────────────────────────────────────────────────────── */
@@ -221,7 +221,7 @@
   border-color: var(--accent);
   transform: translateY(-6px) scale(1.01);
   box-shadow: var(--shadow-lg);
-  background: #F0FDF4;
+  background: #FBF3E8;
 }
 .role-card-icon {
   width: 52px; height: 52px;
@@ -239,10 +239,10 @@
 .chip {
   background: var(--accent-lt); color: var(--accent); padding: 4px 13px; border-radius: 999px;
   font-size: .78rem; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;
-  border: 1px solid rgba(21,128,61,.12);
+  border: 1px solid rgba(184,115,51,.12);
   transition: transform .15s, box-shadow .15s;
 }
-.chip:hover { transform: translateY(-2px); box-shadow: 0 3px 8px rgba(21,128,61,.18); }
+.chip:hover { transform: translateY(-2px); box-shadow: 0 3px 8px rgba(184,115,51,.18); }
 
 /* ── Parent/student hero ───────────────────────────────────────────────────── */
 .student-hero { display: flex; align-items: center; gap: 18px; }
@@ -398,3 +398,36 @@
 .about-section p, .about-section li { color: var(--muted); font-size: .9rem; line-height: 1.65; }
 .about-section ul { padding-left: 20px; }
 .about-section li { margin-bottom: 6px; }
+
+/* ── Team profile cards ────────────────────────────────────────────────────── */
+.team-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 14px; margin-top: 18px;
+}
+.team-card {
+  background: var(--bg, #FAFBFC); border: 1px solid var(--border);
+  border-radius: 12px; padding: 18px 14px; text-align: center;
+  transition: transform .18s cubic-bezier(.34,1.56,.64,1), box-shadow .18s, border-color .18s;
+}
+.team-card:hover {
+  transform: translateY(-3px); box-shadow: var(--shadow-md, 0 8px 24px rgba(16,24,40,.1));
+  border-color: var(--accent);
+}
+.team-avatar {
+  width: 44px; height: 44px; margin: 0 auto 10px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-dk, #8B5520));
+  display: flex; align-items: center; justify-content: center;
+}
+.team-avatar svg { width: 20px; height: 20px; color: #fff; fill: none;
+  stroke: currentColor; stroke-width: 2; }
+.team-name { font-size: .9rem; font-weight: 700; letter-spacing: -.01em; color: var(--text); }
+.team-role {
+  font-size: .68rem; font-weight: 600; color: var(--accent);
+  text-transform: uppercase; letter-spacing: .04em; margin-top: 3px;
+}
+.team-bio { font-size: .78rem; color: var(--muted); line-height: 1.5; margin-top: 7px; }
+
+@media (max-width: 560px) {
+  .team-grid { grid-template-columns: 1fr; }
+}

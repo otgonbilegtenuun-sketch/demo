@@ -925,6 +925,7 @@ async def auth_login(body: LoginBody, request: Request):
     _check_login_rate(username, request)
     user = db.authenticate_user(username, body.password)
     if not user:
+        _note_login_result(username, request, False)
         raise HTTPException(401, detail="Нэвтрэх нэр эсвэл нууц үг буруу байна")
     _note_login_result(username, request, True)
     _audit("auth.login", {"id": user["id"], "role": user["role"]}, "user", str(user["id"]))

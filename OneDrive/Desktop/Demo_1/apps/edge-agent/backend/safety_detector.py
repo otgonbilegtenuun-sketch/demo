@@ -160,8 +160,8 @@ class SafetyDetector:
         for tid, bbox in tracked_persons.items():
             x1, y1, x2, y2 = bbox
             w, h = max(x2 - x1, 1), max(y2 - y1, 1)
-            if w / h > 1.25:
-                signals.append({"key": f"fall_{tid}", "type": "fall_or_collapse", "score": 0.80, "tracks": [tid], "sustain_s": 2.0})
+            if w / h > 1.6:
+                signals.append({"key": f"fall_{tid}", "type": "fall_or_collapse", "score": 0.80, "tracks": [tid], "sustain_s": 4.0})
         return signals
 
     def _detect_running(self, now: float) -> list:
@@ -209,7 +209,7 @@ class SafetyDetector:
             "type": "after_hours_presence",
             "score": 0.80,
             "tracks": tracks,
-            "sustain_s": 5.0,
+            "sustain_s": 30.0,
         }]
 
     def _detect_object_safety(self, objects: list, tracked_persons: dict, now: float) -> list:
